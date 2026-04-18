@@ -1,0 +1,84 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-webshop}
+      POSTGRES_USER: ${POSTGRES_USER:-webshop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webshop}
+    ports:
+      - "5433:5432"
+    volumes:
+      - webshop_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-webshop}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-webshop}:${POSTGRES_PASSWORD:-webshop}@db:5432/${POSTGRES_DB:-webshop}
+      JWT_SECRET: ${JWT_SECRET:-WebShop-Local-Dev-Secret-Change-Me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ALLOW_LEGACY_AUTH: ${ALLOW_LEGACY_AUTH:-true}
+      WEBSHOP_SEED_DEMO: ${WEBSHOP_SEED_DEMO:-true}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_ISSUER_EXTERNAL: ${OIDC_ISSUER_EXTERNAL:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-webshop@localhost}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+    ports:
+      - "8000:8000"
+    volumes:
+      - webshop_uploads:/app/uploads
+      # Izvorni kod uživo (uz --reload u entrypoint-u kada je ENVIRONMENT=development)
+      - ./backend/app:/app/app
+      # Migracije moraju biti iz radnog stabla, inače slika može imati zastareo alembic/ (npr. samo do 0002)
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+
+  frontend:
+    image: node:22-bookworm-slim
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - webshop_node_modules:/app/node_modules
+    ports:
+      # Ako vam lokalno `npm run dev` drži 5173: FRONTEND_HOST_PORT=5174 docker compose up -d frontend
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
+    environment:
+      VITE_BACKEND_PROXY: http://backend:8000
+      VITE_OIDC_AUTHORITY: ${VITE_OIDC_AUTHORITY:-}
+      VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-}
+      VITE_L10N_BASE_URL: ${VITE_L10N_BASE_URL:-}
+      VITE_L10N_APP_KEY: ${VITE_L10N_APP_KEY:-}
+      VITE_L10N_GROUPS: ${VITE_L10N_GROUPS:-}
+      # Za L10n na host mašini: u .env postavite npr. L10N_PROXY_TARGET=http://host.docker.internal:4000
+      L10N_PROXY_TARGET: ${L10N_PROXY_TARGET:-}
+    depends_on:
+      - backend
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+
+volumes:
+  webshop_pg:
+  webshop_node_modules:
+  webshop_uploads:
