@@ -15,6 +15,7 @@ from app.models.tenant_staff import TenantStaff
 from app.rbac import CurrentUser, may_modify_staff_row
 from app.schemas.tenant_staff import TenantStaffCreate, TenantStaffOut, TenantStaffPatch
 from app.config import settings
+from app.services import license_service
 from app.services.zitadel_staff_directory import zitadel_email_in_use
 
 router = APIRouter(prefix="/tenant/staff", tags=["tenant_staff"])
@@ -85,6 +86,9 @@ async def create_staff(
     role = body.role.strip()
     if role not in user.assignable_staff_roles():
         raise HTTPException(status_code=400, detail=tr("staff_invalid_role"))
+    await license_service.enforce_tenant_write_allowed(db, user)
+    if role in license_service.STAFF_COUNT_ROLES:
+        await license_service.enforce_staff_seat_quota(db, _tenant(user))
     await _assert_email_available(db, user, body.email)
     email_n = body.email.strip().lower()
     row = TenantStaff(

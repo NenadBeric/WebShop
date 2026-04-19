@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -229,21 +229,25 @@ function OrdersList({
                 label={t("orders.list_title")}
                 content={<p style={{ margin: 0 }}>{t("orders.list_hint")}</p>}
               />
-            ) : null}
+            ) : (
+              <InfoButton
+                label={t("reception.title")}
+                content={
+                  <p style={{ margin: 0 }}>
+                    {t("reception.staff_personal_orders_hint")}{" "}
+                    <Link to="/catalog">{t("nav.shop")}</Link>
+                    {" · "}
+                    <Link to="/orders">{t("nav.my_orders")}</Link>
+                  </p>
+                }
+              />
+            )}
           </div>
         </div>
         <button type="button" className="btn" onClick={refreshList} disabled={loading}>
           {t("reception.refresh")}
         </button>
       </div>
-      {staffView ? (
-        <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: "0 0 1rem", maxWidth: "42rem" }}>
-          {t("reception.staff_personal_orders_hint")}{" "}
-          <Link to="/catalog">{t("nav.shop")}</Link>
-          {" · "}
-          <Link to="/orders">{t("nav.my_orders")}</Link>
-        </p>
-      ) : null}
 
       <MobileCollapsibleFilters toggleLabel={t("common.filters_toggle")} className="shop-filters" style={{ marginBottom: "1rem" }}>
         <h3 style={{ marginTop: 0 }}>{t("orders.filters_title")}</h3>
@@ -433,6 +437,8 @@ export function ReceptionPage() {
   const [pick, setPick] = useState("");
   const [savingDesk, setSavingDesk] = useState(false);
   const [deskGateErr, setDeskGateErr] = useState<string | null>(null);
+  const [deskChangeModalOpen, setDeskChangeModalOpen] = useState(false);
+  const autoSingleLocationAttempted = useRef(false);
 
   const loadDesk = useCallback(async () => {
     const d = await apiFetch<ReceptionDeskOut>("/api/v1/me/reception-desk");
@@ -449,10 +455,66 @@ export function ReceptionPage() {
   useEffect(() => {
     if (!isDeskOnly) return;
     setDeskErr(null);
+    autoSingleLocationAttempted.current = false;
     void loadDesk().catch((e) => {
       setDeskErr(e instanceof Error ? e.message : String(e));
     });
   }, [isDeskOnly, loadDesk]);
+
+  /** Jedina aktivna lokacija — automatski šalter bez modala. */
+  useEffect(() => {
+    if (!isDeskOnly || !desk || desk.location_id != null || desk.locations.length !== 1) return;
+    if (autoSingleLocationAttempted.current) return;
+    autoSingleLocationAttempted.current = true;
+    const id = desk.locations[0].id;
+    let cancelled = false;
+    void (async () => {
+      setSavingDesk(true);
+      setDeskGateErr(null);
+      try {
+        const d = await apiFetch<ReceptionDeskOut>("/api/v1/me/reception-desk", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location_id: id }),
+        });
+        if (!cancelled) {
+          setDesk(d);
+          setPick(String(d.location_id ?? id));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          autoSingleLocationAttempted.current = false;
+          setDeskGateErr(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (!cancelled) setSavingDesk(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isDeskOnly, desk]);
+
+  const deskMustPickModal = isDeskOnly && desk && desk.locations.length > 1 && desk.location_id == null;
+  const showDeskModal = deskMustPickModal || deskChangeModalOpen;
+
+  const deskLocationSearchOptions = useMemo(
+    () =>
+      (desk?.locations ?? []).map((loc) => ({
+        value: String(loc.id),
+        label: loc.code ? `${loc.code} — ${loc.name}` : loc.name,
+      })),
+    [desk],
+  );
+
+  useEffect(() => {
+    if (!deskChangeModalOpen || !desk) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !deskMustPickModal) setDeskChangeModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deskChangeModalOpen, deskMustPickModal, desk]);
 
   async function saveDesk() {
     const id = parseInt(pick, 10);
@@ -471,12 +533,31 @@ export function ReceptionPage() {
       setDeskGateErr(null);
       setDesk(d);
       setPick(String(d.location_id ?? id));
+      setDeskChangeModalOpen(false);
     } catch (e) {
       setDeskGateErr(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingDesk(false);
     }
   }
+
+  function openDeskChangeModal() {
+    if (desk?.location_id != null) setPick(String(desk.location_id));
+    setDeskGateErr(null);
+    setDeskChangeModalOpen(true);
+  }
+
+  function closeDeskChangeModal() {
+    if (deskMustPickModal) return;
+    setDeskChangeModalOpen(false);
+    if (desk?.location_id != null) setPick(String(desk.location_id));
+    setDeskGateErr(null);
+  }
+
+  const currentDeskLabel =
+    desk && desk.location_id != null
+      ? desk.locations.find((l) => l.id === desk.location_id)?.name?.trim() || `#${desk.location_id}`
+      : "";
 
   if (isDeskOnly) {
     if (deskErr) {
@@ -497,73 +578,42 @@ export function ReceptionPage() {
         </div>
       );
     }
-    if (desk.location_id == null) {
-      return (
-        <div className="card" style={{ maxWidth: "40rem" }}>
-          <h1 style={{ marginTop: 0 }}>{t("reception.desk_title")}</h1>
-          <p style={{ color: "var(--muted)", marginTop: 0 }}>{t("reception.desk_gate_hint")}</p>
-          <div className="field">
-            <label htmlFor="reception-desk-loc">{t("reception.desk_location_label")}</label>
-            <select
-              id="reception-desk-loc"
-              className="input"
-              value={pick}
-              onChange={(e) => setPick(e.target.value)}
-              required
-            >
-              <option value="">{t("checkout.pickup_location_placeholder")}</option>
-              {desk.locations.map((loc) => (
-                <option key={loc.id} value={String(loc.id)}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {deskGateErr ? (
-            <p style={{ color: "var(--danger)" }} role="alert">
-              {deskGateErr}
-            </p>
-          ) : null}
-          <button type="button" className="btn btn-primary" onClick={() => void saveDesk()} disabled={savingDesk || !pick}>
-            {savingDesk ? t("reception.desk_saving") : t("reception.desk_save")}
-          </button>
-        </div>
-      );
-    }
   }
 
   return (
     <div>
       {isDeskOnly && desk && desk.location_id != null ? (
-        <div className="card" style={{ marginBottom: "1rem", maxWidth: "48rem" }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
-            <div className="field" style={{ marginBottom: 0, minWidth: "12rem", flex: "1 1 14rem" }}>
-              <label htmlFor="reception-desk-loc-bar">{t("reception.desk_current")}</label>
-              <select
-                id="reception-desk-loc-bar"
-                className="input"
-                value={pick}
-                onChange={(e) => setPick(e.target.value)}
-              >
-                {desk.locations.map((loc) => (
-                  <option key={loc.id} value={String(loc.id)}>
-                    {loc.name}
-                  </option>
-                ))}
-              </select>
+        <div
+          className="card reception-desk-panel"
+          style={{ marginBottom: "1rem", maxWidth: "48rem" }}
+          role="region"
+          aria-label={t("reception.desk_title")}
+        >
+          <div className="reception-desk-panel__badge">{t("reception.desk_title")}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start", justifyContent: "space-between" }}>
+            <div style={{ minWidth: "min(100%, 12rem)" }}>
+              <div className="reception-desk-panel__meta">{t("reception.desk_current")}</div>
+              <div className="reception-desk-panel__name">{currentDeskLabel}</div>
             </div>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void saveDesk()}
-              disabled={savingDesk || pick === String(desk.location_id)}
-            >
-              {savingDesk ? t("reception.desk_saving") : t("reception.desk_save")}
-            </button>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", alignSelf: "center" }}>
+              <InfoButton
+                label={t("reception.desk_change_location_btn")}
+                content={
+                  <p style={{ margin: 0 }}>
+                    {desk.locations.length < 2 ? t("reception.desk_single_location_hint") : t("reception.desk_change_hint")}
+                  </p>
+                }
+              />
+              <button
+                type="button"
+                className={desk.locations.length >= 2 ? "btn btn-primary" : "btn"}
+                onClick={openDeskChangeModal}
+                disabled={savingDesk || desk.locations.length < 2}
+              >
+                {t("reception.desk_change_location_btn")}
+              </button>
+            </div>
           </div>
-          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: 0, marginTop: "0.5rem" }}>
-            {t("reception.desk_change_hint")}
-          </p>
           {deskGateErr ? (
             <p style={{ color: "var(--danger)", marginTop: "0.5rem", marginBottom: 0 }} role="alert">
               {deskGateErr}
@@ -571,6 +621,72 @@ export function ReceptionPage() {
           ) : null}
         </div>
       ) : null}
+
+      {showDeskModal && desk && desk.locations.length ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!deskMustPickModal) closeDeskChangeModal();
+          }}
+        >
+          <div
+            className={["modal", deskMustPickModal ? "modal--reception-desk-required" : ""].filter(Boolean).join(" ")}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reception-desk-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 440 }}
+          >
+            <div className="page-title-row" style={{ marginTop: 0, marginBottom: "0.5rem" }}>
+              <h2 id="reception-desk-modal-title" style={{ marginTop: 0 }}>
+                {deskMustPickModal ? t("reception.desk_modal_required_title") : t("reception.desk_title")}
+              </h2>
+              <InfoButton
+                label={deskMustPickModal ? t("reception.desk_modal_required_title") : t("reception.desk_title")}
+                content={<p style={{ margin: 0 }}>{t("reception.desk_gate_hint")}</p>}
+              />
+            </div>
+            <form
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                void saveDesk();
+              }}
+            >
+              <div className="field reception-desk-modal__location">
+                <label htmlFor="reception-desk-modal-loc">{t("reception.desk_location_label")}</label>
+                <SearchableSelect
+                  id="reception-desk-modal-loc"
+                  value={pick}
+                  onChange={setPick}
+                  options={deskLocationSearchOptions}
+                  allowEmpty={Boolean(deskMustPickModal)}
+                  emptyLabel={t("checkout.pickup_location_placeholder")}
+                  placeholder={t("checkout.pickup_location_placeholder")}
+                  disabled={savingDesk}
+                  portal
+                />
+              </div>
+              {deskGateErr ? (
+                <p style={{ color: "var(--danger)" }} role="alert">
+                  {deskGateErr}
+                </p>
+              ) : null}
+              <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end", marginTop: "1rem" }}>
+                {!deskMustPickModal ? (
+                  <button type="button" className="btn" onClick={closeDeskChangeModal} disabled={savingDesk}>
+                    {t("reception.desk_modal_cancel")}
+                  </button>
+                ) : null}
+                <button type="submit" className="btn btn-primary" disabled={savingDesk || !pick}>
+                  {savingDesk ? t("reception.desk_saving") : t("reception.desk_save")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       <OrdersList variant="staff" deskRefreshNonce={desk?.location_id ?? 0} />
     </div>
   );

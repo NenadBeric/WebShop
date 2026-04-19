@@ -1,6 +1,7 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
+import { AdminSelectTenantPage } from "./pages/AdminSelectTenantPage";
 import { CartPage } from "./pages/CartPage";
 import { CatalogPage } from "./pages/CatalogPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
@@ -15,12 +16,13 @@ import { ProductTypesPage } from "./pages/ProductTypesPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { CustomerOrdersPage, ReceptionPage } from "./pages/ReceptionPage";
 import { StaffDirectoryPage } from "./pages/StaffDirectoryPage";
+import { LicenseAdminPage } from "./pages/LicenseAdminPage";
 import { TenantSettingsPage } from "./pages/TenantSettingsPage";
 
 function PrivateRoute() {
   const { token } = useAuth();
   if (!token) return <Navigate to="/login" replace />;
-  return <Layout />;
+  return <Outlet />;
 }
 
 export function App() {
@@ -30,6 +32,8 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/callback" element={<OidcCallback />} />
         <Route element={<PrivateRoute />}>
+          <Route path="/admin/select-tenant" element={<AdminSelectTenantPage />} />
+          <Route element={<Layout />}>
           <Route path="/" element={<Navigate to="/catalog" replace />} />
           <Route path="/catalog" element={<CatalogPage />} />
           <Route path="/cart" element={<CartPage />} />
@@ -45,6 +49,8 @@ export function App() {
           <Route path="/reference/products" element={<ProductsPage />} />
           <Route path="/reference/product-types" element={<ProductTypesPage />} />
           <Route path="/reference/measure-units" element={<MeasureUnitsPage />} />
+          <Route path="/admin/licenses" element={<LicenseAdminPage />} />
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/catalog" replace />} />
       </Routes>

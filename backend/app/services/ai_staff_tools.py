@@ -7,11 +7,12 @@ from datetime import date, datetime, time, timedelta, UTC
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Integer, and_, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.notification import Notification
 from app.models.order_staff_event import OrderStaffEvent
-from app.models.shop_order import Order, OrderLine
+from app.models.shop_order import Order, OrderLine, QuantityReductionOffer, SubstitutionOffer
 from app.models.product import Product
 from app.services.product_sale import effective_price_gross
 from app.models.tenant_profile import TenantLocation
@@ -52,6 +53,29 @@ async def run_staff_tool(
     name: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
+    # Alati bez kalendarskog opsega — ne smeju zavisiti od date_from/date_to u args (planer često šalje samo limit).
+    if name == "catalog_sale_products":
+        limit = int(args.get("limit") or 80)
+        limit = max(1, min(limit, 150))
+        stmt = (
+            select(Product)
+            .where(Product.tenant_id == tenant_id, Product.sale_percent > 0, Product.available.is_(True))
+            .order_by(Product.sale_percent.desc(), Product.id)
+            .limit(limit)
+        )
+        prows = list((await db.scalars(stmt)).all())
+        data = [
+            {
+                "product_id": int(p.id),
+                "name": p.name,
+                "sale_percent": int(getattr(p, "sale_percent", 0) or 0),
+                "price_gross_catalog_rsd": str(Decimal(str(p.price_gross))),
+                "price_gross_effective_rsd": str(effective_price_gross(p)),
+            }
+            for p in prows
+        ]
+        return {"tool": name, "ok": True, "data": _json_safe(data)}
+
     date_from = _parse_date(args.get("date_from"))
     date_to = _parse_date(args.get("date_to"))
     _validate_range(date_from, date_to)
@@ -115,28 +139,6 @@ async def run_staff_tool(
                 "revenue_gross_on_sale": str(Decimal(str(r[8] or 0))),
             }
             for r in rows
-        ]
-        return {"tool": name, "ok": True, "data": _json_safe(data)}
-
-    if name == "catalog_sale_products":
-        limit = int(args.get("limit") or 80)
-        limit = max(1, min(limit, 150))
-        stmt = (
-            select(Product)
-            .where(Product.tenant_id == tenant_id, Product.sale_percent > 0, Product.available.is_(True))
-            .order_by(Product.sale_percent.desc(), Product.id)
-            .limit(limit)
-        )
-        prows = list((await db.scalars(stmt)).all())
-        data = [
-            {
-                "product_id": int(p.id),
-                "name": p.name,
-                "sale_percent": int(getattr(p, "sale_percent", 0) or 0),
-                "price_gross_catalog_rsd": str(Decimal(str(p.price_gross))),
-                "price_gross_effective_rsd": str(effective_price_gross(p)),
-            }
-            for p in prows
         ]
         return {"tool": name, "ok": True, "data": _json_safe(data)}
 
@@ -309,14 +311,282 @@ async def run_staff_tool(
         typ_rows = (await db.execute(typ_stmt)).all()
         by_event_type = [{"event_type": str(r[0]), "count": int(r[1] or 0)} for r in typ_rows]
 
+        sys_stmt = select(func.count(OrderStaffEvent.id)).where(
+            base_ev
+            & (func.lower(func.coalesce(OrderStaffEvent.actor_name, "")) == "system")
+        )
+        system_actor_events = int((await db.execute(sys_stmt)).scalar() or 0)
+
         return {
             "tool": name,
             "ok": True,
             "data": _json_safe(
                 {
                     "period_events_total": total,
+                    "system_actor_events": system_actor_events,
+                    "human_actor_events": max(0, total - system_actor_events),
                     "by_actor": by_actor,
                     "by_event_type": by_event_type,
+                }
+            ),
+        }
+
+    if name == "order_notifications_summary":
+        base_nt = and_(
+            Notification.tenant_id == tenant_id,
+            Order.tenant_id == tenant_id,
+            Notification.created_at >= start,
+            Notification.created_at < end,
+        )
+        stmt = (
+            select(Notification.audience, Notification.event_type, func.count(Notification.id))
+            .select_from(Notification)
+            .join(Order, Order.id == Notification.order_id)
+            .where(base_nt)
+            .group_by(Notification.audience, Notification.event_type)
+            .order_by(func.count(Notification.id).desc())
+            .limit(100)
+        )
+        rows = (await db.execute(stmt)).all()
+        data = [
+            {"audience": str(r[0]), "event_type": str(r[1]), "count": int(r[2] or 0)} for r in rows
+        ]
+        return {"tool": name, "ok": True, "data": _json_safe(data)}
+
+    if name == "order_notifications_timeline":
+        limit = int(args.get("limit") or 200)
+        limit = max(1, min(limit, 400))
+        base_nt = and_(
+            Notification.tenant_id == tenant_id,
+            Order.tenant_id == tenant_id,
+            Notification.created_at >= start,
+            Notification.created_at < end,
+        )
+        stmt = (
+            select(
+                Notification.id,
+                Notification.order_id,
+                Order.order_number,
+                Notification.audience,
+                Notification.event_type,
+                Notification.recipient_sub,
+                Notification.meta,
+                Notification.created_at,
+            )
+            .select_from(Notification)
+            .join(Order, Order.id == Notification.order_id)
+            .where(base_nt)
+        )
+        aud = str(args.get("audience") or "").strip().lower()
+        if aud in ("customer", "reception"):
+            stmt = stmt.where(Notification.audience == aud)
+        ev = args.get("event_type")
+        if ev and str(ev).strip():
+            stmt = stmt.where(Notification.event_type == str(ev).strip()[:64])
+        else:
+            evc = args.get("event_type_contains")
+            if evc and str(evc).strip():
+                stmt = stmt.where(Notification.event_type.ilike(f"%{str(evc).strip()[:64]}%"))
+        oid = args.get("order_id")
+        if oid is not None and str(oid).strip().isdigit():
+            stmt = stmt.where(Notification.order_id == int(oid))
+        onum = args.get("order_number")
+        if onum and str(onum).strip():
+            stmt = stmt.where(Order.order_number.ilike(f"%{str(onum).strip()[:64]}%"))
+        stmt = stmt.order_by(Notification.created_at.desc()).limit(limit)
+        rows = (await db.execute(stmt)).all()
+        data = [
+            {
+                "id": int(r[0]),
+                "order_id": int(r[1]),
+                "order_number": str(r[2]),
+                "audience": str(r[3]),
+                "event_type": str(r[4]),
+                "recipient_sub": r[5],
+                "meta": _json_safe(r[6] or {}),
+                "created_at": r[7].isoformat() if r[7] else None,
+            }
+            for r in rows
+        ]
+        return {"tool": name, "ok": True, "data": _json_safe(data)}
+
+    if name == "discount_order_lines":
+        """Stavke porudžbina u periodu gde je snimljen popust (sale_percent_applied > 0)."""
+        limit = int(args.get("limit") or 200)
+        limit = max(1, min(limit, 350))
+        line_on_sale = OrderLine.sale_percent_applied > 0
+        line_rev = OrderLine.quantity * OrderLine.unit_price
+        stmt = (
+            select(
+                Order.id,
+                Order.order_number,
+                Order.created_at,
+                OrderLine.id,
+                Product.id,
+                Product.name,
+                OrderLine.quantity,
+                OrderLine.sale_percent_applied,
+                OrderLine.catalog_unit_price_gross,
+                OrderLine.unit_price,
+                line_rev,
+            )
+            .select_from(OrderLine)
+            .join(Order, Order.id == OrderLine.order_id)
+            .join(Product, Product.id == OrderLine.product_id)
+            .where(
+                Order.tenant_id == tenant_id,
+                Order.created_at >= start,
+                Order.created_at < end,
+                ~exclude_lines,
+                line_on_sale,
+            )
+        )
+        oid = args.get("order_id")
+        if oid is not None and str(oid).strip().isdigit():
+            stmt = stmt.where(Order.id == int(oid))
+        pid = args.get("product_id")
+        if pid is not None and str(pid).strip().isdigit():
+            stmt = stmt.where(OrderLine.product_id == int(pid))
+        stmt = stmt.order_by(Order.created_at.desc(), OrderLine.id).limit(limit)
+        rows = (await db.execute(stmt)).all()
+        data = [
+            {
+                "order_id": int(r[0]),
+                "order_number": str(r[1]),
+                "order_created_at": r[2].isoformat() if r[2] else None,
+                "line_id": int(r[3]),
+                "product_id": int(r[4]),
+                "product_name": str(r[5]),
+                "quantity": int(r[6] or 0),
+                "sale_percent_applied": int(r[7] or 0),
+                "catalog_unit_price_gross_rsd": str(Decimal(str(r[8] or 0))),
+                "unit_price_paid_gross_rsd": str(Decimal(str(r[9] or 0))),
+                "line_revenue_gross_rsd": str(Decimal(str(r[10] or 0))),
+            }
+            for r in rows
+        ]
+        return {"tool": name, "ok": True, "data": _json_safe(data)}
+
+    if name == "substitution_stats":
+        """Ponude zamene (recepcija): status po ponudi + ko je kreirao ponudu (audit), prihvat/odbijanje kupca."""
+        st_rows = (
+            await db.execute(
+                select(SubstitutionOffer.status, func.count(SubstitutionOffer.id))
+                .join(Order, Order.id == SubstitutionOffer.order_id)
+                .where(
+                    Order.tenant_id == tenant_id,
+                    SubstitutionOffer.created_at >= start,
+                    SubstitutionOffer.created_at < end,
+                )
+                .group_by(SubstitutionOffer.status)
+            )
+        ).all()
+        by_offer_status = [{"status": str(r[0]), "count": int(r[1] or 0)} for r in st_rows]
+
+        offer_id_expr = cast(OrderStaffEvent.meta["offer_id"].astext, Integer)
+        staff_stmt = (
+            select(
+                OrderStaffEvent.actor_name,
+                OrderStaffEvent.actor_email,
+                func.count(SubstitutionOffer.id),
+                func.sum(case((SubstitutionOffer.status == "accepted", 1), else_=0)),
+                func.sum(case((SubstitutionOffer.status == "rejected", 1), else_=0)),
+                func.sum(case((SubstitutionOffer.status == "pending", 1), else_=0)),
+            )
+            .select_from(OrderStaffEvent)
+            .join(SubstitutionOffer, SubstitutionOffer.id == offer_id_expr)
+            .join(Order, Order.id == SubstitutionOffer.order_id)
+            .where(
+                Order.tenant_id == tenant_id,
+                OrderStaffEvent.tenant_id == tenant_id,
+                OrderStaffEvent.event_type == "substitution_offer_created",
+                SubstitutionOffer.created_at >= start,
+                SubstitutionOffer.created_at < end,
+            )
+            .group_by(OrderStaffEvent.actor_name, OrderStaffEvent.actor_email)
+            .order_by(func.count(SubstitutionOffer.id).desc())
+            .limit(30)
+        )
+        sr = (await db.execute(staff_stmt)).all()
+        by_staff = [
+            {
+                "actor_name": str(r[0] or ""),
+                "actor_email": str(r[1] or ""),
+                "substitution_offers_created": int(r[2] or 0),
+                "accepted_by_customer": int(r[3] or 0),
+                "rejected_by_customer": int(r[4] or 0),
+                "still_pending": int(r[5] or 0),
+            }
+            for r in sr
+        ]
+
+        qty_status_rows = (
+            await db.execute(
+                select(QuantityReductionOffer.status, func.count(QuantityReductionOffer.id))
+                .join(Order, Order.id == QuantityReductionOffer.order_id)
+                .where(
+                    Order.tenant_id == tenant_id,
+                    QuantityReductionOffer.created_at >= start,
+                    QuantityReductionOffer.created_at < end,
+                )
+                .group_by(QuantityReductionOffer.status)
+            )
+        ).all()
+        quantity_offers_by_status = [{"status": str(r[0]), "count": int(r[1] or 0)} for r in qty_status_rows]
+
+        qty_offer_id_expr = cast(OrderStaffEvent.meta["offer_id"].astext, Integer)
+        qty_staff_stmt = (
+            select(
+                OrderStaffEvent.actor_name,
+                OrderStaffEvent.actor_email,
+                func.count(QuantityReductionOffer.id),
+                func.sum(case((QuantityReductionOffer.status == "accepted", 1), else_=0)),
+                func.sum(case((QuantityReductionOffer.status == "rejected", 1), else_=0)),
+                func.sum(case((QuantityReductionOffer.status == "pending", 1), else_=0)),
+            )
+            .select_from(OrderStaffEvent)
+            .join(QuantityReductionOffer, QuantityReductionOffer.id == qty_offer_id_expr)
+            .join(Order, Order.id == QuantityReductionOffer.order_id)
+            .where(
+                Order.tenant_id == tenant_id,
+                OrderStaffEvent.tenant_id == tenant_id,
+                OrderStaffEvent.event_type == "quantity_reduction_proposed",
+                QuantityReductionOffer.created_at >= start,
+                QuantityReductionOffer.created_at < end,
+            )
+            .group_by(OrderStaffEvent.actor_name, OrderStaffEvent.actor_email)
+            .order_by(func.count(QuantityReductionOffer.id).desc())
+            .limit(30)
+        )
+        qr = (await db.execute(qty_staff_stmt)).all()
+        by_staff_quantity = [
+            {
+                "actor_name": str(r[0] or ""),
+                "actor_email": str(r[1] or ""),
+                "quantity_offers_created": int(r[2] or 0),
+                "accepted_by_customer": int(r[3] or 0),
+                "rejected_by_customer": int(r[4] or 0),
+                "still_pending": int(r[5] or 0),
+            }
+            for r in qr
+        ]
+
+        return {
+            "tool": name,
+            "ok": True,
+            "data": _json_safe(
+                {
+                    "period_note": "Substitution and quantity offers use each table's created_at (UTC). "
+                    "Per-staff rows join order_staff_events: substitution_offer_created and "
+                    "quantity_reduction_proposed with meta.offer_id matching the offer (includes batch "
+                    "proposals logged per offer since backend fix). Customer outcomes are offer.status. "
+                    "For the same data as the order screen ('Akcije zaposlenih'), also call order_staff_actions "
+                    "(event timeline: status_*, substitution_offer_created, quantity_reduction_proposed, "
+                    "reception_batch_proposed, etc.).",
+                    "offers_by_status": by_offer_status,
+                    "by_staff_who_created_offer": by_staff,
+                    "quantity_offers_by_status": quantity_offers_by_status,
+                    "by_staff_who_created_quantity_offer": by_staff_quantity,
                 }
             ),
         }

@@ -919,7 +919,12 @@ export function OrderPage() {
               <h3 style={{ marginTop: 0 }}>{t("order.customer_pending_title")}</h3>
               <InfoButton
                 label={t("order.customer_pending_title")}
-                content={<p style={{ margin: 0 }}>{t("order.customer_pending_intro")}</p>}
+                content={
+                  <>
+                    <p style={{ margin: "0 0 0.5rem" }}>{t("order.customer_pending_intro")}</p>
+                    {anyMultiSub ? <p style={{ margin: 0 }}>{t("order.customer_accept_all_blocked")}</p> : null}
+                  </>
+                }
               />
             </div>
             {lineErr && (
@@ -940,11 +945,6 @@ export function OrderPage() {
                 {t("order.customer_reject_all")}
               </button>
             </div>
-            {anyMultiSub && (
-              <p style={{ color: "var(--muted)", fontSize: "0.82rem", marginTop: "0.5rem", marginBottom: 0 }}>
-                {t("order.customer_accept_all_blocked")}
-              </p>
-            )}
           </div>
 
           {pendingCustomerLineIds.map((lineId) => {

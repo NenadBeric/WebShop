@@ -167,6 +167,18 @@ MESSAGES: dict[str, dict[str, str]] = {
         "ru": "Выбранная локация недействительна или неактивна.",
         "zh": "所选取货地点无效或未启用。",
     },
+    "admin_tenant_unknown": {
+        "sr": "Izabrana firma (tenant_id) ne postoji u sistemu.",
+        "en": "Selected company (tenant_id) does not exist.",
+        "ru": "Выбранная компания (tenant_id) не найдена.",
+        "zh": "所选公司（tenant_id）不存在。",
+    },
+    "pickup_location_required": {
+        "sr": "Izaberite mesto preuzimanja — firma ima aktivne lokacije.",
+        "en": "Please select a pickup location; the shop has active pickup sites.",
+        "ru": "Выберите точку выдачи — у компании есть активные локации.",
+        "zh": "请选择取货地点；该商户已配置启用的取货点。",
+    },
     "tenant_location_duplicate_code": {
         "sr": "Kod lokacije mora biti jedinstven u listi.",
         "en": "Location codes must be unique in the list.",
@@ -274,6 +286,84 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "The location is not valid or not active for this tenant.",
         "ru": "Локация недействительна или неактивна для этой компании.",
         "zh": "该地点对此商户无效或未启用。",
+    },
+    "license_subscription_expired": {
+        "sr": "Licenca je istekla — izmene nisu dozvoljene.",
+        "en": "Your subscription has expired — changes are not allowed.",
+        "ru": "Срок лицензии истёк — изменения запрещены.",
+        "zh": "许可证已过期，不允许更改。",
+    },
+    "license_subscription_past_due": {
+        "sr": "Licenca je u stanju past-due — izmene nisu dozvoljene.",
+        "en": "Your subscription is past due — changes are not allowed.",
+        "ru": "Лицензия просрочена по оплате — изменения запрещены.",
+        "zh": "订阅已逾期，不允许更改。",
+    },
+    "license_subscription_blocked": {
+        "sr": "Licenca nije aktivna — izmene nisu dozvoljene.",
+        "en": "Your subscription is not active — changes are not allowed.",
+        "ru": "Лицензия неактивна — изменения запрещены.",
+        "zh": "订阅未激活，不允许更改。",
+    },
+    "license_subscription_payment_blocked": {
+        "sr": "Licenca je blokirana zbog neplaćanja — izmene nisu dozvoljene.",
+        "en": "Your subscription is blocked for non-payment — changes are not allowed.",
+        "ru": "Лицензия заблокирована из-за неоплаты — изменения запрещены.",
+        "zh": "订阅因未付款已被阻止，不允许更改。",
+    },
+    "license_limit_locations": {
+        "sr": "Dostignut je limit paketa za broj aktivnih lokacija preuzimanja.",
+        "en": "The licensed limit for active pickup locations has been reached.",
+        "ru": "Достигнут лимит активных точек выдачи по лицензии.",
+        "zh": "已达到许可证允许的活跃取货地点数量上限。",
+    },
+    "license_limit_staff": {
+        "sr": "Dostignut je limit paketa za broj zaposlenih (recepcija / menadžment).",
+        "en": "The licensed limit for staff seats (reception / management) has been reached.",
+        "ru": "Достигнут лимит мест для персонала (ресепшн / менеджмент).",
+        "zh": "已达到许可证允许的店员（前台/管理）席位上限。",
+    },
+    "license_limit_products": {
+        "sr": "Dostignut je limit paketa za broj proizvoda u katalogu.",
+        "en": "The licensed limit for catalog products has been reached.",
+        "ru": "Достигнут лимит товаров в каталоге по лицензии.",
+        "zh": "已达到许可证允许的商品目录数量上限。",
+    },
+    "license_limit_orders_month": {
+        "sr": "Dostignut je mesečni limit paketa za broj porudžbina.",
+        "en": "The licensed monthly order volume limit has been reached.",
+        "ru": "Достигнут месячный лимит заказов по лицензии.",
+        "zh": "已达到许可证允许的月度订单数量上限。",
+    },
+    "license_limit_buyers_30d": {
+        "sr": "Dostignut je limit paketa za broj različitih kupaca u poslednjih 30 dana.",
+        "en": "The licensed limit for distinct buyers in the last 30 days has been reached.",
+        "ru": "Достигнут лимит уникальных покупателей за 30 дней по лицензии.",
+        "zh": "已达到许可证允许的近30天独立买家数量上限。",
+    },
+    "theme_low_contrast": {
+        "sr": "Primarna boja je previše slična pozadini izabranog preset-a (kontrast). Izaberite drugu boju.",
+        "en": "Primary color is too close to the preset background (contrast). Pick a different color.",
+        "ru": "Основной цвет слишком близок к фону пресета. Выберите другой цвет.",
+        "zh": "主色与预设背景对比度不足，请更换颜色。",
+    },
+    "theme_unknown_preset": {
+        "sr": "Nepoznat preset teme.",
+        "en": "Unknown theme preset.",
+        "ru": "Неизвестный пресет темы.",
+        "zh": "未知的主题预设。",
+    },
+    "theme_logo_too_large": {
+        "sr": "Logo prelazi 800 KB.",
+        "en": "Logo exceeds 800 KB.",
+        "ru": "Логотип больше 800 КБ.",
+        "zh": "Logo 超过 800 KB。",
+    },
+    "theme_logo_bad_type": {
+        "sr": "Dozvoljeni formati loga: PNG, JPEG, WebP, SVG.",
+        "en": "Allowed logo types: PNG, JPEG, WebP, SVG.",
+        "ru": "Допустимые форматы: PNG, JPEG, WebP, SVG.",
+        "zh": "允许的 Logo 格式：PNG、JPEG、WebP、SVG。",
     },
 }
 

@@ -156,14 +156,18 @@ export function ReportsPage() {
       <div className="page-title-row" style={{ marginBottom: "0.75rem" }}>
         <h1 style={{ marginTop: 0 }}>{t("reports.title")}</h1>
         <InfoButton label={t("reports.title")} content={<p style={{ margin: 0 }}>{t("reports.subtitle")}</p>} />
+        {!isEmbed ? (
+          <InfoButton
+            label={t("reports.embed_link")}
+            content={
+              <div>
+                <p style={{ margin: "0 0 0.5rem" }}>{t("reports.embed_hint")}</p>
+                <NavLink to={`${loc.pathname}?embed=true`}>{t("reports.embed_link")}</NavLink>
+              </div>
+            }
+          />
+        ) : null}
       </div>
-
-      {!isEmbed ? (
-        <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginTop: "-0.35rem", marginBottom: "0.75rem" }}>
-          {t("reports.embed_hint")}{" "}
-          <NavLink to={`${loc.pathname}?embed=true`}>{t("reports.embed_link")}</NavLink>
-        </p>
-      ) : null}
 
       <MobileCollapsibleFilters toggleLabel={t("common.filters_toggle")} className="shop-filters" style={{ marginBottom: "1rem" }}>
         <h3 style={{ marginTop: 0 }}>{t("reports.period")}</h3>

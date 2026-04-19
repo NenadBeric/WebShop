@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { canManage, useAuth } from "../auth/AuthContext";
+import { InfoButton } from "../components/InfoButton";
 import { useI18n } from "../i18n/I18nContext";
 import type { StaffChatMessageRow, StaffChatSessionRow } from "../types";
 import { sendStaffChatMessage } from "./staffChatStream";
@@ -112,11 +113,11 @@ export function StaffAiChatPage() {
       <div className="staff-ai-page__header">
         <div className="page-title-row" style={{ marginBottom: "0.35rem", flexWrap: "wrap", gap: "0.5rem" }}>
           <h1>{t("aiStaff.title")}</h1>
+          <InfoButton label={t("aiStaff.title")} content={<p style={{ margin: 0 }}>{t("aiStaff.subtitle")}</p>} />
           <button type="button" className="btn" onClick={() => setSidebarOpen((s) => !s)}>
             {t("aiStaff.sessions")}
           </button>
         </div>
-        <p className="staff-ai-page__subtitle">{t("aiStaff.subtitle")}</p>
       </div>
 
       <div className="staff-ai-layout">

@@ -12,6 +12,7 @@ from app.models.measure_unit import MeasureUnit
 from app.models.product import Product
 from app.models.product_type import ProductType
 from app.schemas.products import ProductCreate, ProductOut, ProductPatch, product_out_list
+from app.services import license_service
 from app.services.vat import prices_consistent
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -116,6 +117,8 @@ async def create_product(
     if not user.can_manage_catalog():
         raise HTTPException(status_code=403, detail=tr("forbidden"))
     t = _tenant(user)
+    await license_service.enforce_tenant_write_allowed(db, user)
+    await license_service.enforce_product_quota(db, t)
     pt = (
         await db.execute(select(ProductType).where(ProductType.id == body.product_type_id, ProductType.tenant_id == t))
     ).scalar_one_or_none()

@@ -32,7 +32,7 @@ from app.services.client_keys import legacy_client_zitadel_keys
 from app.services.notification_service import add_customer, add_reception
 from app.services.post_order_dispatch import dispatch_after_order_created
 from app.services.qr import qr_code_data_url
-from app.services import tenant_service
+from app.services import license_service, tenant_service
 from app.services.order_staff_audit import log_order_staff_event
 from app.services.product_sale import effective_price_gross, effective_price_net, sale_percent_at_purchase
 
@@ -119,8 +119,12 @@ async def create_order(db: AsyncSession, user: CurrentUser, body: OrderCreate) -
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=tr("forbidden"))
 
     tenant = _tenant(user)
+    await license_service.enforce_tenant_write_allowed(db, user)
+    await license_service.enforce_new_order_quotas(db, tenant, user.sub)
     pickup_mode, pickup_at, pickup_note = _pickup_fields(body.pickup)
     await tenant_service.validate_pickup_datetime(db, tenant, pickup_at=pickup_at)
+    if await license_service.count_active_pickup_locations(db, tenant) > 0 and body.pickup_location_id is None:
+        raise HTTPException(status_code=400, detail=tr("pickup_location_required"))
     await tenant_service.validate_pickup_location(db, tenant, body.pickup_location_id)
     source_id = await _resolve_source_id(db, body.source_code.upper())
 
@@ -1114,24 +1118,43 @@ async def propose_reception_changes(
         line = lines_by_id[ch.line_id]
         if ch.offered_product_ids:
             seen = list(dict.fromkeys(ch.offered_product_ids))[:3]
-            db.add(
-                SubstitutionOffer(
-                    order_id=order.id,
-                    line_id=line.id,
-                    offered_product_ids=seen,
-                    status="pending",
-                )
+            sub_off = SubstitutionOffer(
+                order_id=order.id,
+                line_id=line.id,
+                offered_product_ids=seen,
+                status="pending",
+            )
+            db.add(sub_off)
+            await db.flush()
+            log_order_staff_event(
+                db,
+                order,
+                user,
+                "substitution_offer_created",
+                meta={"offer_id": sub_off.id, "line_id": line.id, "batch": True},
             )
             created += 1
         if ch.proposed_quantity is not None:
-            db.add(
-                QuantityReductionOffer(
-                    order_id=order.id,
-                    line_id=line.id,
-                    previous_quantity=line.quantity,
-                    proposed_quantity=ch.proposed_quantity,
-                    status="pending",
-                )
+            qty_off = QuantityReductionOffer(
+                order_id=order.id,
+                line_id=line.id,
+                previous_quantity=line.quantity,
+                proposed_quantity=ch.proposed_quantity,
+                status="pending",
+            )
+            db.add(qty_off)
+            await db.flush()
+            log_order_staff_event(
+                db,
+                order,
+                user,
+                "quantity_reduction_proposed",
+                meta={
+                    "offer_id": qty_off.id,
+                    "line_id": line.id,
+                    "proposed_quantity": ch.proposed_quantity,
+                    "batch": True,
+                },
             )
             created += 1
 

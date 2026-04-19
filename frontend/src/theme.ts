@@ -1,22 +1,24 @@
-export const THEME_KEY = "webshop_theme";
+/**
+ * @deprecated Koristiti `lib/themeToggle` — ovo ostaje radi kompatibilnosti importa.
+ */
+import { applyThemeToDocument, getTheme, initUserThemeFromStorage, setTheme, type AppTheme } from "./lib/themeToggle";
+
+export const THEME_KEY = "trainify_theme";
 
 export function initThemeFromStorage() {
-  if (localStorage.getItem(THEME_KEY) === "light") {
-    document.documentElement.setAttribute("data-theme", "light");
-  }
+  initUserThemeFromStorage();
 }
 
 export function readThemeIsLight(): boolean {
-  return document.documentElement.getAttribute("data-theme") === "light";
+  return getTheme() === "light";
 }
 
 export function setThemeIsLight(light: boolean) {
-  const root = document.documentElement;
-  if (light) {
-    root.setAttribute("data-theme", "light");
-    localStorage.setItem(THEME_KEY, "light");
-  } else {
-    root.removeAttribute("data-theme");
-    localStorage.setItem(THEME_KEY, "dark");
-  }
+  setTheme(light ? "light" : "dark");
 }
+
+export function applyLight(light: boolean) {
+  applyThemeToDocument(light ? "light" : "dark");
+}
+
+export type { AppTheme };

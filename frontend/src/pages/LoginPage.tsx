@@ -1,16 +1,42 @@
-import { FormEvent, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { FormEvent, useEffect, useState } from "react";
+import { Navigate, useLocation } from "react-router-dom";
+import { apiFetch } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { InfoButton } from "../components/InfoButton";
 import { useI18n } from "../i18n/I18nContext";
+import { applyTenantThemeToDocument, type TenantThemeDto } from "../theme/applyTenantTheme";
+import { applyTenantThemeFromCurrentUrl } from "../theme/embedThemeBootstrap";
+import { writeCachedTenantBranding } from "../theme/tenantBrandingCache";
 
 export function LoginPage() {
   const { token, login, isOidc } = useAuth();
   const { t } = useI18n();
+  const location = useLocation();
   const [email, setEmail] = useState("customer@webshop.demo");
   const [password, setPassword] = useState("demo123");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    applyTenantThemeFromCurrentUrl();
+    const sp = new URLSearchParams(location.search);
+    const tenantId = (sp.get("tenantId") || "").trim();
+    if (!tenantId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await apiFetch<TenantThemeDto>(`/api/v1/public/tenants/${encodeURIComponent(tenantId)}/theme`);
+        if (cancelled) return;
+        applyTenantThemeToDocument(data, null);
+        writeCachedTenantBranding(data);
+      } catch {
+        /* nepoznat tenant ili mreža */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search]);
 
   if (token) return <Navigate to="/catalog" replace />;
 

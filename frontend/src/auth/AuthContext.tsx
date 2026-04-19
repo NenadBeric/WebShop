@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch, getToken, parseJwtPayload, setToken } from "../api/client";
+import { getAdminTenantId, setAdminTenantIdInStorage } from "../lib/adminTenant";
 import type { SessionOut } from "../types";
 import { IS_OIDC, userManager } from "./oidc-config";
 
@@ -23,6 +24,10 @@ type AuthState = {
   token: string | null;
   user: JwtUser | null;
   isOidc: boolean;
+  /** Izabrana firma za ADMIN (localStorage + sinhronizacija sa API zaglavljem). */
+  adminTenantId: string | null;
+  setAdminTenantId: (tenantId: string | null) => void;
+  refreshMe: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshFromStorage: () => void;
@@ -51,12 +56,42 @@ function readJwtUser(token: string | null): JwtUser | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setTok] = useState<string | null>(() => getToken());
   const [me, setMe] = useState<SessionOut | null>(null);
+  const [adminTenantId, setAdminTenantIdState] = useState<string | null>(() => getAdminTenantId());
 
   const rawUser = useMemo(() => readJwtUser(token), [token]);
-  const user = useMemo(() => mergeUser(rawUser, me), [rawUser, me]);
+  const user = useMemo(() => {
+    const merged = mergeUser(rawUser, me);
+    if (merged?.role === "ADMIN" && adminTenantId) {
+      return { ...merged, tenant_id: adminTenantId };
+    }
+    return merged;
+  }, [rawUser, me, adminTenantId]);
+
+  const setAdminTenantId = useCallback((tenantId: string | null) => {
+    setAdminTenantIdInStorage(tenantId);
+    setAdminTenantIdState(tenantId ? tenantId.trim() : null);
+  }, []);
+
+  useEffect(() => {
+    setAdminTenantIdState(getAdminTenantId());
+  }, [token]);
+
+  const refreshMe = useCallback(async () => {
+    const tok = getToken();
+    if (!tok) return;
+    const raw = readJwtUser(tok);
+    if (raw?.role && String(raw.role).trim() && raw.role !== "ADMIN") return;
+    try {
+      const p = await apiFetch<SessionOut>("/api/v1/auth/me");
+      setMe(p);
+    } catch {
+      setMe(null);
+    }
+  }, []);
 
   const refreshFromStorage = useCallback(() => {
     setTok(getToken());
+    setAdminTenantIdState(getAdminTenantId());
   }, []);
 
   useEffect(() => {
@@ -105,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const raw = readJwtUser(token);
-    if (raw?.role && String(raw.role).trim().length > 0) {
+    if (raw?.role && String(raw.role).trim() && raw.role !== "ADMIN") {
       setMe(null);
       return;
     }
@@ -120,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, adminTenantId]);
 
   const login = useCallback(async (email: string, password: string) => {
     if (IS_OIDC && userManager) {
@@ -135,12 +170,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(res.access_token);
     setTok(res.access_token);
     setMe(null);
+    setAdminTenantIdInStorage(null);
+    setAdminTenantIdState(null);
   }, []);
 
   const logout = useCallback(async () => {
     setToken(null);
     setTok(null);
     setMe(null);
+    setAdminTenantIdInStorage(null);
+    setAdminTenantIdState(null);
     if (IS_OIDC && userManager) {
       try {
         await userManager.signoutRedirect();
@@ -151,8 +190,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ token, user, isOidc: IS_OIDC, login, logout, refreshFromStorage }),
-    [token, user, login, logout, refreshFromStorage],
+    () => ({
+      token,
+      user,
+      isOidc: IS_OIDC,
+      adminTenantId,
+      setAdminTenantId,
+      refreshMe,
+      login,
+      logout,
+      refreshFromStorage,
+    }),
+    [token, user, adminTenantId, setAdminTenantId, refreshMe, login, logout, refreshFromStorage],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

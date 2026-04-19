@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { canManage, useAuth } from "../auth/AuthContext";
 import { InfoButton } from "../components/InfoButton";
+import { TenantThemeBrandingModal } from "../components/TenantThemeBrandingModal";
 import { useI18n } from "../i18n/I18nContext";
 import type { TenantLocationInForm, TenantProfileOut } from "../types";
 
@@ -49,6 +50,7 @@ export function TenantSettingsPage() {
   const [smtp_from, setSmtp_from] = useState("");
   const [smtp_use_tls, setSmtp_use_tls] = useState(true);
   const [locations, setLocations] = useState<TenantLocationInForm[]>([emptyLocation()]);
+  const [themeModalOpen, setThemeModalOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -309,8 +311,18 @@ export function TenantSettingsPage() {
           </div>
         </div>
 
-        <h2>{t("tenant.section_integrations")}</h2>
-        <p style={{ color: "var(--muted)", fontSize: "0.9rem", maxWidth: 640 }}>{t("tenant.telegram_chat_hint")}</p>
+        <div className="page-title-row" style={{ marginBottom: "0.5rem" }}>
+          <h2 style={{ margin: 0 }}>{t("tenant.section_appearance")}</h2>
+          <InfoButton label={t("tenant.section_appearance")} content={<p style={{ margin: 0 }}>{t("tenant.theme.intro")}</p>} />
+        </div>
+        <button type="button" className="btn" onClick={() => setThemeModalOpen(true)} style={{ marginBottom: "1.25rem" }}>
+          {t("tenant.theme.open")}
+        </button>
+
+        <div className="page-title-row" style={{ marginBottom: "0.5rem" }}>
+          <h2 style={{ margin: 0 }}>{t("tenant.section_integrations")}</h2>
+          <InfoButton label={t("tenant.section_integrations")} content={<p style={{ margin: 0 }}>{t("tenant.telegram_chat_hint")}</p>} />
+        </div>
         <div className="field">
           <label>{t("tenant.telegram_bot_token")}</label>
           <input
@@ -452,6 +464,7 @@ export function TenantSettingsPage() {
           {saving ? t("common.loading") : t("tenant.save")}
         </button>
       </form>
+      {themeModalOpen ? <TenantThemeBrandingModal onClose={() => setThemeModalOpen(false)} /> : null}
     </div>
   );
 }

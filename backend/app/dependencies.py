@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +9,12 @@ from app.auth.oidc import decode_token
 from app.config import settings
 from app.database import get_session
 from app.i18n import tr
+from app.models.tenant_profile import TenantProfile
 from app.rbac import CurrentUser
 
 security = HTTPBearer(auto_error=False)
+
+DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 def _decode_payload(token: str) -> dict:
@@ -46,14 +49,29 @@ def _payload_to_user(payload: dict) -> CurrentUser:
 
 async def get_current_user(
     cred: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: DbSession,
+    x_webshop_tenant_id: Annotated[str | None, Header(alias="X-Webshop-Tenant-Id")] = None,
 ) -> CurrentUser:
     if cred is None or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=tr("invalid_token"))
     payload = _decode_payload(cred.credentials)
-    return _payload_to_user(payload)
+    user = _payload_to_user(payload)
+    if user.is_admin():
+        h = (x_webshop_tenant_id or "").strip()
+        if h:
+            row = await db.get(TenantProfile, h)
+            if row is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=tr("admin_tenant_unknown"))
+            return CurrentUser(
+                sub=user.sub,
+                tenant_id=h,
+                role=user.role,
+                email=user.email,
+                name=user.name,
+            )
+    return user
 
 
-DbSession = Annotated[AsyncSession, Depends(get_session)]
 AuthUser = Annotated[CurrentUser, Depends(get_current_user)]
 
 

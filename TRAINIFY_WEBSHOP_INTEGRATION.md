@@ -43,6 +43,77 @@ Kad budu poznati **stvarni** URL-ovi deploya, dopišite ih u tabelu ispod (bez z
 
 Za prikaz bez menija (npr. u Trainify iframe-u), na bilo koji URL frontenda dodajte query **`?embed=true`** (ili `embed=1`). Korisnik mora i dalje biti autentifikovan u WebShop-u (isti JWT / sesija u iframe-u zavisi od domena i `SameSite` kolačiča — u praksi najčešće isti sajt ili token prosleđen prema dogovoru).
 
+### 2.3. Tema brenda tenanta, light/dark i jezik (Trainify → WebShop SPA)
+
+WebShop deli isti CSS model kao Trainify (`data-gym-theme-preset`, `data-gym-custom-primary`, `data-theme="light"`, itd.). Tema se može proslediti **pre učitavanja React-a** (query string), **iz keša** (poslednji uspešni brend), ili **runtime** porukom iz roditeljskog prozora (`postMessage`).
+
+**Redosled pri startu** (izvor istine: `frontend/src/main.tsx`):
+
+1. **`bootstrapLangFromUrl()`** — ako u URL-u postoji `lang` ili `locale` (`sr` \| `en` \| `ru` \| `zh`), vrednost se upisuje u `localStorage` pod ključem `webshop_lang` pre `I18nProvider`-a, tako da je ceo UI na tom jeziku pri prvom renderu.
+2. **`applyTenantThemeFromCurrentUrl()`** — čita query i primenjuje tenant brend + opciono `appTheme` / `trainify_theme` (light/dark na `<html>` i isti ključ `trainify_theme` u `localStorage` radi usklađenja sa Trainify-jem).
+3. Ako u URL-u **nema** `appTheme` ni `trainify_theme`, poziva se **`initThemeFromStorage()`** (preostali light/dark iz storage-a).
+4. **`applyCachedTenantBrandingIfAny()`** — primena poslednjeg keširanog `TenantThemeDto` ako postoji (npr. posle prethodnog ulaska).
+5. **`installCrossAppThemeListener()`** — sluša `postMessage` sa temom (vidi ispod).
+
+#### 2.3.1. Query parametri (iframe ili deep link)
+
+| Parametar | Primer | Značenje |
+|-----------|--------|----------|
+| **`embed`** | `embed=true` | Kompaktan UI (izveštaji, itd.) — vidi §2.2. |
+| **`lang`** ili **`locale`** | `lang=en` | Jezik celog SPA: `sr`, `en`, `ru`, `zh` → `localStorage.webshop_lang`. |
+| **`tenantTheme`** ili **`embedTheme`** | `tenantTheme=1` | „Uključi“ čitanje brenda iz URL-a zajedno sa `tenantId` (vidi `embedThemeBootstrap.ts`). |
+| **`tenantId`** | `tenantId=demo-gym` | Identitet tenanta za brend; obavezan ako iz URL-a gradite `TenantThemeDto`. |
+| **`appTheme`** ili **`trainify_theme`** | `appTheme=light` | Korisnički režim: `light` \| `dark` (isti smisao kao u Trainify `trainify_theme`). |
+| **`themePreset`** | `themePreset=LIGHT_A` | Gym preset na `<html>`: **`LIGHT_A`** ili **`DARK_B`** (isto kao Trainify). Vrednost `TRAINIFY` u JSON-u se tretira kao „bez preset-a“. |
+| **`primaryColorHex`** | `primaryColorHex=%233b82f6` | URL-enkodiran `#RRGGBB`. **Važno:** u kodu (`applyTenantTheme.ts`) prilagođena primarna boja se primenjuje **samo ako je postavljen i validan `themePreset` (`LIGHT_A` ili `DARK_B`)** — hex bez preset-a **ne menja** `--primary`. |
+| **`themeFont`** | `themeFont=INTER` | Ista konvencija kao u admin modalu teme (Google font link + `--font`). |
+| **`borderRadiusPx`** | `borderRadiusPx=12` | Broj 0–16 → CSS radius tokeni. |
+| **`buttonHoverHex`** | `buttonHoverHex=%232563eb` | Opciono; inače se izračuna iz primarne. |
+
+**Primer kompletnog `src` za iframe** (ilustracija; zamenite host i `tenant_id`):
+
+```text
+https://<webshop-frontend-host>/catalog?embed=true&tenantTheme=1&tenantId=TERETANA-1&lang=sr&appTheme=light&themePreset=LIGHT_A&primaryColorHex=%233b82f6&borderRadiusPx=10&themeFont=INTER
+```
+
+#### 2.3.2. `postMessage` iz Trainify roditelja
+
+Sluša se u `installCrossAppThemeListener()` (`embedThemeBootstrap.ts`). Tip poruke:
+
+- **`webshop-theme-handoff`** (preporučeno za WebShop), ili
+- **`trainify-webshop-theme`** (alias, kompatibilnost).
+
+Telo (pojednostavljeno):
+
+```json
+{
+  "type": "webshop-theme-handoff",
+  "version": 1,
+  "appTheme": "light",
+  "theme": {
+    "tenantId": "TERETANA-1",
+    "themePreset": "LIGHT_A",
+    "primaryColorHex": "#3b82f6",
+    "hasLogo": false,
+    "logoPath": null,
+    "borderRadiusPx": 12,
+    "themeFont": "INTER",
+    "buttonHoverHex": "#2563eb",
+    "themeUpdatedAt": null
+  }
+}
+```
+
+`theme` odgovara `TenantThemeDto` na frontu / JSON-u koji vraća `GET /api/v1/tenant/theme` i javni `GET /api/v1/public/tenants/{tenantId}/theme`. Posle poruke tema se i **kešira** (`tenantBrandingCache`) radi sledećeg ulaska.
+
+#### 2.3.3. Javni endpoint teme (login / embed bez tokena)
+
+Ako iframe učitava npr. `/login?tenantId=...`, `LoginPage` dodatno zove **`GET /api/v1/public/tenants/{tenantId}/theme`** i primenjuje odgovor (logo putanja, preset, boje, …). Query brend iz §2.3.1 i dalje može da predstoji ili dopuni ovo.
+
+#### 2.3.4. Jezik API-ja (pored UI `lang`)
+
+Za **`fetch` direktno na WebShop API** i dalje šaljite zaglavlje **`Accept-Language: sr`** (ili `en` / `ru` / `zh`) — isto kao u §3; vrednost na frontu dolazi iz `getSavedLanguage()` (`frontend/src/api/client.ts`) nakon što je korisnik (ili URL) postavio jezik.
+
 ---
 
 ## 3. HTTP konvencije
@@ -192,7 +263,10 @@ Ako prvi release ne može da nosi token do WebShop API-ja iz browsera:
 - [ ] U WebShop adminu postoje tipovi proizvoda i proizvodi (npr. „Šejk“) i `TRAINIFY` ostaje aktivan izvor u bazi.
 - [ ] CORS ili backend proxy rešen za produkcioni origin Trainify-ja.
 - [ ] Test: `order-rules` → `for-training-type` → `POST /orders` sa `source_code: "TRAINIFY"` i `external_ref` sa ID-jem rezervacije.
+- [ ] **Iframe tema:** ako koristite `primaryColorHex`, uvek prosledite i **`themePreset=LIGHT_A` ili `DARK_B`** (inače se primarna ne primenjuje).
+- [ ] **Iframe jezik:** `lang` / `locale` u URL-u ili korisnikov prethodni izbor u `webshop_lang`; API `Accept-Language` usklađen.
+- [ ] Po potrebi: `postMessage` sa `webshop-theme-handoff` testiran iz Trainify konzole (origin / sandbox).
 
 ---
 
-*Verzija dokumenta usklađena sa WebShop backend šemama (`OrderCreate`, `PickupIn`, `TenantOrderRulesOut`) i rutama pod prefiksom `/api/v1`.*
+*Verzija dokumenta: WebShop backend šeme (`OrderCreate`, `PickupIn`, `TenantOrderRulesOut`), rute `/api/v1`, plus front bootstrap teme/jezika (`main.tsx`, `theme/embedThemeBootstrap.ts`, `theme/applyTenantTheme.ts`).*

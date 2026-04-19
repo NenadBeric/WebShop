@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { setToken } from "../api/client";
+import { setAdminTenantIdInStorage } from "../lib/adminTenant";
 import { userManager } from "./oidc-config";
 
 export function OidcCallback() {
@@ -21,6 +22,7 @@ export function OidcCallback() {
       .then((user) => {
         if (user?.access_token) {
           setToken(user.access_token);
+          setAdminTenantIdInStorage(null);
         }
         navigate("/catalog", { replace: true });
       })

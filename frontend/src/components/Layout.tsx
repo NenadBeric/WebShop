@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { apiFetch } from "../api/client";
 import { useAuth, canManage, canReception, canShop } from "../auth/AuthContext";
 import { useCart } from "../cart/CartContext";
 import { useI18n } from "../i18n/I18nContext";
@@ -39,6 +40,8 @@ import { NotificationBell } from "./NotificationBell";
 import { OrderQrScannerModal } from "./OrderQrScannerModal";
 import { SearchableSelect } from "./SearchableSelect";
 import { ThemeSwitch } from "./ThemeSwitch";
+import { applyTenantThemeToDocument, clearTenantThemeFromDocument, type TenantThemeDto } from "../theme/applyTenantTheme";
+import { clearCachedTenantBranding, writeCachedTenantBranding } from "../theme/tenantBrandingCache";
 
 const STORAGE_PIN = "webshop_sidebar_pin";
 
@@ -70,7 +73,7 @@ const LANG_OPTIONS = [
 ];
 
 export function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, token, adminTenantId, setAdminTenantId } = useAuth();
   const { lines } = useCart();
   const { t, lang, setLang } = useI18n();
   const loc = useLocation();
@@ -90,6 +93,51 @@ export function Layout() {
   );
 
   const userKey = user?.sub || user?.email || "anon";
+  const hadAuthToken = useRef(false);
+
+  useEffect(() => {
+    const tid = (user?.tenant_id || "").trim();
+    if (!token || !tid) return;
+    let cancelled = false;
+    void apiFetch<TenantThemeDto>("/api/v1/tenant/theme")
+      .then((data) => {
+        if (cancelled) return;
+        applyTenantThemeToDocument(data, null);
+        writeCachedTenantBranding(data);
+      })
+      .catch(() => {
+        /* npr. ADMIN bez tenanta — ignoriši */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user?.tenant_id]);
+
+  useEffect(() => {
+    if (!token) {
+      if (hadAuthToken.current) {
+        hadAuthToken.current = false;
+        clearCachedTenantBranding();
+        clearTenantThemeFromDocument();
+      }
+      return;
+    }
+    hadAuthToken.current = true;
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const onRefresh = () => {
+      void apiFetch<TenantThemeDto>("/api/v1/tenant/theme")
+        .then((data) => {
+          applyTenantThemeToDocument(data, null);
+          writeCachedTenantBranding(data);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("webshop-tenant-theme", onRefresh as EventListener);
+    return () => window.removeEventListener("webshop-tenant-theme", onRefresh as EventListener);
+  }, [token]);
   const [pinnedPaths, setPinnedPaths] = useState<string[]>([]);
   const [quickMaxSlots, setQuickMaxSlots] = useState(() =>
     typeof window !== "undefined" ? computeMobileQuickMaxSlots(window.innerWidth) : MOBILE_QUICK_MIN,
@@ -167,6 +215,12 @@ export function Layout() {
           { to: "/reference/product-types", label: "nav.ref_product_types", icon: <IconRefProductTypes /> },
           { to: "/reference/measure-units", label: "nav.ref_measure_units", icon: <IconRefMeasureUnits /> },
         ],
+      });
+    }
+    if (role === "ADMIN") {
+      groups.push({
+        label: "nav.group_admin",
+        tabs: [{ to: "/admin/licenses", label: "nav.admin_licenses", icon: <IconBuilding /> }],
       });
     }
     const paths = groups.flatMap((g) => g.tabs.map((x) => x.to));
@@ -291,6 +345,10 @@ export function Layout() {
     </>
   ) : undefined;
 
+  if (role === "ADMIN" && !adminTenantId) {
+    return <Navigate to="/admin/select-tenant" replace state={{ from: loc.pathname }} />;
+  }
+
   if (embedMode) {
     return (
       <div className="app-shell app-shell--embed">
@@ -316,6 +374,24 @@ export function Layout() {
             </button>
           ) : null}
           <span className="brand">{t("app.title")}</span>
+          {role === "ADMIN" && adminTenantId ? (
+            <div className="app-header__admin-tenant" style={{ marginLeft: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+              <span className="text-muted" style={{ fontSize: "0.82rem" }}>
+                {t("adminTenant.context_label")}: <strong>{user?.tenant_id}</strong>
+              </span>
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: "0.2rem 0.55rem", fontSize: "0.82rem" }}
+                onClick={() => {
+                  setAdminTenantId(null);
+                  navigate("/admin/select-tenant", { replace: false, state: { from: loc.pathname } });
+                }}
+              >
+                {t("adminTenant.change")}
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="app-header__actions">
           {canShop(role) ? (
@@ -429,7 +505,12 @@ export function Layout() {
               {canManage(role) && (
                 <div className="sidebar__group">
                   <div className="sidebar__group-label">{t("nav.group_manage")}</div>
-                  <NavLink to="/reports" className={({ isActive }) => itemClass(isActive)} onClick={() => blurRailFocus()}>
+                  <NavLink
+                    to="/reports"
+                    end
+                    className={({ isActive }) => itemClass(isActive)}
+                    onClick={() => blurRailFocus()}
+                  >
                     <IconChart />
                     <span>{t("nav.reports")}</span>
                   </NavLink>
@@ -462,6 +543,16 @@ export function Layout() {
                   <NavLink to="/reference/measure-units" className={({ isActive }) => itemClass(isActive)} onClick={() => blurRailFocus()}>
                     <IconRefMeasureUnits />
                     <span>{t("nav.ref_measure_units")}</span>
+                  </NavLink>
+                </div>
+              )}
+
+              {role === "ADMIN" && (
+                <div className="sidebar__group">
+                  <div className="sidebar__group-label">{t("nav.group_admin")}</div>
+                  <NavLink to="/admin/licenses" className={({ isActive }) => itemClass(isActive)} onClick={() => blurRailFocus()}>
+                    <IconBuilding />
+                    <span>{t("nav.admin_licenses")}</span>
                   </NavLink>
                 </div>
               )}

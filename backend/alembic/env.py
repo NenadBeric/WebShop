@@ -15,6 +15,7 @@ from app.models.ai_chat import AiChatMessage, AiChatSession  # noqa: F401
 from app.models.reception_desk_selection import ReceptionDeskSelection  # noqa: F401
 from app.models.tenant_profile import TenantLocation, TenantProfile  # noqa: F401
 from app.models.tenant_staff import TenantStaff  # noqa: F401
+from app.models.license import LicenseAddon, LicensePlan, LicenseSubscription  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

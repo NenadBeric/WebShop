@@ -119,7 +119,8 @@ export function CatalogPage() {
       list = list.filter((p) => idset.has(p.id));
     }
     list = list.filter((p) => {
-      if (q) {
+      /* AI već radi semantički match — ručna pretraga ne sme da isprazni listu posle AI odgovora. */
+      if (q && !(aiFilterIds && aiFilterIds.length > 0)) {
         const hay = `${p.name} ${p.description || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }

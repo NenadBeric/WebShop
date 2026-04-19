@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, getSavedLanguage } from "../api/client";
 import { DatetimeLocalPicker } from "../components/DatetimeLocalPicker";
@@ -33,28 +33,31 @@ export function CheckoutPage() {
   const [pickupAt, setPickupAt] = useState("");
   const [pickupNote, setPickupNote] = useState("");
   const [pickupLocationId, setPickupLocationId] = useState<number | "">("");
-  const [rules, setRules] = useState<TenantOrderRules | null>(undefined);
+  const [rules, setRules] = useState<TenantOrderRules | null | undefined>(undefined);
+  const [rulesError, setRulesError] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const r = await apiFetch<TenantOrderRules>("/api/v1/tenant/order-rules");
-        if (cancelled) return;
-        setRules(r);
-        if (r.locations.length === 1) {
-          setPickupLocationId(r.locations[0].id);
-        }
-      } catch {
-        if (!cancelled) setRules(null);
+  const loadRules = useCallback(async () => {
+    setRules(undefined);
+    setRulesError(null);
+    try {
+      const r = await apiFetch<TenantOrderRules>("/api/v1/tenant/order-rules");
+      setRules(r);
+      if (r.locations.length >= 1) {
+        setPickupLocationId(r.locations[0].id);
+      } else {
+        setPickupLocationId("");
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch (e) {
+      setRules(null);
+      setRulesError(e instanceof Error ? e.message : String(e));
+    }
   }, []);
+
+  useEffect(() => {
+    void loadRules();
+  }, [loadRules]);
 
   const bounds = useMemo(() => {
     if (!rules) return null;
@@ -63,14 +66,11 @@ export function CheckoutPage() {
 
   const pickupLocationOptions = useMemo(() => {
     if (!rules?.locations.length) return [];
-    return [
-      { value: "", label: t("checkout.pickup_location_placeholder") },
-      ...rules.locations.map((loc) => ({
-        value: String(loc.id),
-        label: `${loc.code} — ${loc.name}`,
-      })),
-    ];
-  }, [rules, t]);
+    return rules.locations.map((loc) => ({
+      value: String(loc.id),
+      label: `${loc.code} — ${loc.name}`,
+    }));
+  }, [rules]);
 
   const pickupModeOptions = useMemo(
     () => [
@@ -149,30 +149,81 @@ export function CheckoutPage() {
     );
   }
 
+  if (rules === null && rulesError) {
+    return (
+      <div>
+        <h1 style={{ marginTop: 0 }}>{t("checkout.title")}</h1>
+        <div className="card" style={{ maxWidth: 520 }}>
+          <p style={{ color: "var(--danger)", marginTop: 0 }}>{t("checkout.rules_load_error")}</p>
+          <p className="text-muted" style={{ fontSize: "0.9rem" }}>
+            {rulesError}
+          </p>
+          <button type="button" className="btn btn-primary" onClick={() => void loadRules()}>
+            {t("checkout.rules_retry")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!rules) {
+    return (
+      <div>
+        <h1>{t("checkout.title")}</h1>
+        <p>{t("common.loading")}</p>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>{t("checkout.title")}</h1>
-      <p>{t("checkout.pay_note")}</p>
-      {rules && (
-        <p style={{ color: "var(--muted)", fontSize: "0.9rem", maxWidth: 560 }}>
-          {t("checkout.rules_hint", {
-            max_days: rules.max_schedule_days_ahead,
-            min_hours: rules.min_notice_hours_before_pickup,
-            grace: rules.pickup_grace_hours_after_slot,
-            tz: rules.timezone,
-          })}
-        </p>
-      )}
+      <div className="page-title-row" style={{ marginTop: 0, marginBottom: "0.75rem" }}>
+        <h1 style={{ marginTop: 0 }}>{t("checkout.title")}</h1>
+        <InfoButton
+          label={t("checkout.title")}
+          content={
+            <>
+              <p style={{ margin: "0 0 0.75rem" }}>{t("checkout.pay_note")}</p>
+              <p style={{ margin: 0 }}>
+                {t("checkout.rules_hint", {
+                  max_days: rules.max_schedule_days_ahead,
+                  min_hours: rules.min_notice_hours_before_pickup,
+                  grace: rules.pickup_grace_hours_after_slot,
+                  tz: rules.timezone,
+                })}
+              </p>
+            </>
+          }
+        />
+      </div>
       <form className="card" onSubmit={onSubmit} style={{ maxWidth: 520 }}>
-        {rules && rules.locations.length > 0 && (
+        {rules.locations.length === 0 ? (
+          <p className="text-muted" style={{ fontSize: "0.9rem", marginTop: 0 }}>
+            {t("checkout.no_pickup_locations")}
+          </p>
+        ) : rules.locations.length === 1 ? (
           <div className="field">
-            <label htmlFor="checkout-pickup-loc">{t("checkout.pickup_location")}</label>
+            <div className="field__label-row">
+              <label>{t("checkout.pickup_location")}</label>
+              <InfoButton label={t("checkout.pickup_location")} content={<p style={{ margin: 0 }}>{t("checkout.pickup_location_single_hint")}</p>} />
+            </div>
+            <p style={{ margin: 0, fontWeight: 600 }}>
+              {rules.locations[0].code} — {rules.locations[0].name}
+            </p>
+          </div>
+        ) : (
+          <div className="field">
+            <div className="field__label-row">
+              <label htmlFor="checkout-pickup-loc">{t("checkout.pickup_location")}</label>
+              <InfoButton label={t("checkout.pickup_location")} content={<p style={{ margin: 0 }}>{t("checkout.pickup_location_hint")}</p>} />
+            </div>
             <SearchableSelect
               id="checkout-pickup-loc"
               value={pickupLocationId === "" ? "" : String(pickupLocationId)}
               onChange={(v) => setPickupLocationId(v === "" ? "" : Number(v))}
               options={pickupLocationOptions}
-              allowEmpty
+              allowEmpty={false}
+              emptyLabel={t("checkout.pickup_location_placeholder")}
               portal
             />
           </div>

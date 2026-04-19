@@ -34,6 +34,10 @@ KNOWN_TOOLS = frozenset(
         "order_staff_actions",
         "staff_actions_summary",
         "catalog_sale_products",
+        "order_notifications_summary",
+        "order_notifications_timeline",
+        "discount_order_lines",
+        "substitution_stats",
     }
 )
 
@@ -161,7 +165,7 @@ async def _run_planner(
 ) -> dict[str, Any]:
     system = (
         "You are a query planner for a shop analytics assistant (orders, revenue, locations, customers, "
-        "staff actions on orders).\n"
+        "staff actions on orders, customer/reception notifications tied to orders).\n"
         "Respond with ONLY valid JSON (no markdown). Schema:\n"
         '{"tools":[{"name":"<str>","args":{...}}],"need_clarification":null}\n'
         'or {"tools":[],"need_clarification":"<one short question>"}\n\n'
@@ -174,16 +178,31 @@ async def _run_planner(
         '- "revenue_by_location": args {date_from, date_to}.\n'
         '- "top_customers": args {date_from, date_to, limit?} (default 15).\n'
         '- "order_staff_actions": args {date_from, date_to, limit?, order_id?, order_number?, event_type?, '
-        "actor_email?, actor_name?} — reception/system audit log lines (newest first); dates filter event time, "
+        "actor_email?, actor_name?} — audit log (staff or customer as actor when logged); dates filter event time, "
         "not order creation.\n"
-        '- "staff_actions_summary": args {date_from, date_to} — counts grouped by staff actor and by event_type.\n\n'
+        '- "staff_actions_summary": args {date_from, date_to} — counts by actor, by event_type, plus system vs human.\n'
+        '- "order_notifications_summary": args {date_from, date_to} — counts by audience (customer vs reception) '
+        "and event_type for in-app notifications on orders.\n"
+        '- "order_notifications_timeline": args {date_from, date_to, limit?, audience?, order_id?, order_number?, '
+        "event_type?, event_type_contains?} — notification rows (customer-facing vs reception inbox); "
+        "use event_type OR event_type_contains, not both.\n"
+        '- "discount_order_lines": args {date_from, date_to, limit?, order_id?, product_id?} — order line items '
+        "sold with sale_percent_applied>0 in the period (order creation date).\n"
+        '- "substitution_stats": args {date_from, date_to} — replacement + quantity-reduction offers: counts by '
+        "status; per reception staff who created each offer (audit: substitution_offer_created / "
+        "quantity_reduction_proposed with meta.offer_id). Use together with order_staff_actions for full "
+        "timeline like the order detail page (Završeni predlozi + Akcije zaposlenih).\n\n"
         f"If the user does not specify dates, use date_from={date_from} and date_to={date_to} (UTC calendar days).\n"
         f"At most {MAX_TOOLS_PER_TURN} tools. Prefer fewer tools when one shop_report is enough.\n"
-        "For questions about who processed orders, approvals, substitutions, or reception activity, "
-        "use order_staff_actions and/or staff_actions_summary (not shop_report alone).\n"
+        "For questions about who processed orders, approvals, substitutions, quantity changes, who proposed the "
+        "most swaps, or acceptance/rejection rates, call substitution_stats AND order_staff_actions (not "
+        "shop_report alone). order_staff_actions lists each audit row (actor_name, event_type, from_status, "
+        "to_status, meta, timestamps) like 'Akcije zaposlenih' on an order.\n"
+        "For what was sent to the customer vs reception about an order (status, substitutions, batch proposals), "
+        "use order_notifications_summary and/or order_notifications_timeline.\n"
         "If the question is ambiguous about dates or metric, ask a short clarification instead of guessing years.\n"
-        "For promotions, discounts, or which products are on sale, use shop_report (sold-on-sale history) "
-        "and/or catalog_sale_products (current sale list)."
+        "For promotions, discounts, line-level discounted sales, or which products are on sale, use shop_report, "
+        "discount_order_lines, and/or catalog_sale_products."
     )
     user_block = f"Prior conversation (may be empty):\n{history_text}\n\nLatest user message:\n{user_message}"
     plan = await llm_chat_json(
@@ -294,6 +313,14 @@ async def staff_chat_stream(
             "shop_report includes discount: revenue from order lines that were sold with a recorded sale snapshot, "
             "and top_products rows include quantity_sold_on_sale / revenue_gross_on_sale. "
             "catalog_sale_products lists current catalog items with an active sale. "
+            "discount_order_lines lists individual order lines where a sale discount was applied at purchase. "
+            "substitution_stats summarizes substitution_offers and quantity_reduction_offers (who at reception "
+            "created each offer via audit events substitution_offer_created and quantity_reduction_proposed "
+            "with meta.offer_id; by_staff_who_created_offer / by_staff_who_created_quantity_offer). "
+            "order_staff_actions is the per-event audit log (same source as 'Akcije zaposlenih' on the order). "
+            "order_notifications_* rows describe persisted notifications (audience customer vs reception), "
+            "including many customer-facing order events (often event_type starting with customer.). "
+            "staff_actions_summary may include system_actor_events for automated audit entries. "
             "Match the language of the user's latest message (sr/en/ru/zh). "
             "Short markdown bullets are allowed."
         )

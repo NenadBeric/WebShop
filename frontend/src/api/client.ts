@@ -1,4 +1,5 @@
 import { getSavedLanguage, setSavedLanguage } from "../i18n/setup";
+import { getAdminTenantId } from "../lib/adminTenant";
 
 export { getSavedLanguage, setSavedLanguage };
 
@@ -30,6 +31,13 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   headers.set("Accept-Language", getSavedLanguage());
+  if (token) {
+    const p = parseJwtPayload<{ role?: string }>(token);
+    if (p?.role === "ADMIN") {
+      const tid = getAdminTenantId();
+      if (tid) headers.set("X-Webshop-Tenant-Id", tid);
+    }
+  }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (res.status === 204) return undefined as T;
   const text = await res.text();

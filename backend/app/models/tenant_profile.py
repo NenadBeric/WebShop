@@ -44,6 +44,14 @@ class TenantProfile(Base):
     smtp_from: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
     smtp_use_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
 
+    theme_preset: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    primary_color_hex: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    theme_border_radius_px: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    theme_font: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    theme_button_hover_hex: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    theme_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    theme_logo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

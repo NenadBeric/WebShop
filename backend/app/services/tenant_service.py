@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.i18n import tr
 from app.models.shop_order import Order, OrderStatus
+from app.services import license_service
 from app.services.order_staff_audit import log_order_staff_event
 from app.models.tenant_profile import TenantLocation, TenantProfile
 from app.rbac import CurrentUser
@@ -122,6 +123,7 @@ async def validate_pickup_datetime(
 
 async def update_profile(db: AsyncSession, user: CurrentUser, body: TenantProfileUpdate) -> TenantProfileOut:
     tenant = _tenant(user)
+    await license_service.enforce_tenant_write_allowed(db, user)
     p = await ensure_profile(db, tenant)
 
     codes: set[str] = set()
@@ -139,6 +141,9 @@ async def update_profile(db: AsyncSession, user: CurrentUser, body: TenantProfil
         from fastapi import HTTPException
 
         raise HTTPException(status_code=400, detail=tr("tenant_timezone_invalid")) from None
+
+    active_locations = sum(1 for loc in body.locations if loc.is_active)
+    await license_service.enforce_pickup_location_quota(db, tenant, active_locations)
 
     p.legal_name = body.legal_name.strip()
     p.trade_name = body.trade_name.strip()

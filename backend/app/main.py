@@ -15,6 +15,8 @@ from app.config import settings
 from app.i18n import I18nMiddleware
 from app.limiter import limiter
 from app.routers import (
+    admin_licenses,
+    admin_tenants,
     ai,
     auth,
     cart,
@@ -27,11 +29,14 @@ from app.routers import (
     product_types,
     products,
     reports,
+    public_tenant_theme,
     tenant_settings,
     tenant_staff,
+    tenant_theme,
     uploads,
 )
 from app.models.ai_chat import AiChatMessage, AiChatSession  # noqa: F401
+from app.models.license import LicenseAddon, LicensePlan, LicenseSubscription  # noqa: F401
 from app.models.order_staff_event import OrderStaffEvent  # noqa: F401
 from app.seed import run_seed_if_enabled
 
@@ -129,6 +134,8 @@ app.mount("/static", StaticFiles(directory=settings.UPLOAD_DIR), name="static")
 
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(admin_licenses.router, prefix="/api/v1")
+app.include_router(admin_tenants.router, prefix="/api/v1")
 app.include_router(me_reception_desk.router, prefix="/api/v1")
 app.include_router(product_types.router, prefix="/api/v1")
 app.include_router(measure_units.router, prefix="/api/v1")
@@ -140,5 +147,7 @@ app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(import_export.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(tenant_settings.router, prefix="/api/v1")
+app.include_router(tenant_theme.router, prefix="/api/v1")
+app.include_router(public_tenant_theme.router, prefix="/api/v1")
 app.include_router(tenant_staff.router, prefix="/api/v1")
 app.include_router(ai.router, prefix="/api/v1")

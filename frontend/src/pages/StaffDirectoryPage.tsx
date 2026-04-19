@@ -2,6 +2,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { useAuth, canManage } from "../auth/AuthContext";
+import { InfoButton } from "../components/InfoButton";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { useI18n } from "../i18n/I18nContext";
 import type { TenantStaffRow } from "../types";
 
@@ -46,6 +48,16 @@ export function StaffDirectoryPage() {
   const [modalErr, setModalErr] = useState<string | null>(null);
 
   const roleOptions = useMemo(() => assignableRoleKeys(role), [role]);
+
+  const roleSearchOptions = useMemo(() => {
+    const tFn = t as (key: string) => string;
+    return roleOptions.map((rk) => {
+      const k = `staff.role.${rk}`;
+      const m = tFn(k);
+      const label = m === k ? rk : m;
+      return { value: rk, label };
+    });
+  }, [roleOptions, t]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,8 +147,10 @@ export function StaffDirectoryPage() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>{t("staff.title")}</h1>
-      <p style={{ color: "var(--muted)", maxWidth: "48rem" }}>{t("staff.intro")}</p>
+      <div className="page-title-row" style={{ marginBottom: "0.75rem" }}>
+        <h1 style={{ marginTop: 0 }}>{t("staff.title")}</h1>
+        <InfoButton label={t("staff.title")} content={<p style={{ margin: 0 }}>{t("staff.intro")}</p>} />
+      </div>
       {err ? <p style={{ color: "var(--danger)" }}>{err}</p> : null}
 
       <div style={{ marginBottom: "1rem" }}>
@@ -192,14 +206,16 @@ export function StaffDirectoryPage() {
                 <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
               </div>
               <div className="field">
-                <label>{t("staff.role")}</label>
-                <select value={rolePick} onChange={(e) => setRolePick(e.target.value)} required>
-                  {roleOptions.map((rk) => (
-                    <option key={rk} value={rk}>
-                      {roleLabel(rk)}
-                    </option>
-                  ))}
-                </select>
+                <label htmlFor="staff-modal-role">{t("staff.role")}</label>
+                <SearchableSelect
+                  id="staff-modal-role"
+                  value={rolePick}
+                  onChange={setRolePick}
+                  options={roleSearchOptions}
+                  allowEmpty={false}
+                  disabled={saving || !roleSearchOptions.length}
+                  portal
+                />
               </div>
               {editing ? (
                 <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", marginBottom: "0.75rem" }}>
