@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "WebShop-Dev-Secret-Change-Me"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 24
+    # Isti secret kao Trainify ``JWT_SECRET`` — omogućava Bearer iz Trainify klijenta (BFF / embed_token).
+    TRAINIFY_JWT_SECRET: str = ""
+    TRAINIFY_JWT_ALGORITHM: str = "HS256"
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     ENVIRONMENT: str = "development"
     ALLOW_LEGACY_AUTH: bool = True
@@ -48,7 +51,9 @@ class Settings(BaseSettings):
             return False
         return self.ALLOW_LEGACY_AUTH and not self.OIDC_ISSUER
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # `.env` in repo root may also contain Docker/Compose and frontend variables (POSTGRES_*, L10N_*).
+    # Ignore unknown keys so local dev doesn't crash on extra env vars.
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

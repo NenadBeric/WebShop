@@ -17,3 +17,7 @@ class NotificationOut(BaseModel):
 
 class NotificationReadBody(BaseModel):
     ids: list[int] = Field(default_factory=list, max_length=100)
+
+
+class NotificationDeleteBody(BaseModel):
+    ids: list[int] = Field(default_factory=list, max_length=200)

@@ -1,4 +1,5 @@
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { Layout } from "./components/Layout";
 import { AdminSelectTenantPage } from "./pages/AdminSelectTenantPage";
@@ -18,6 +19,8 @@ import { CustomerOrdersPage, ReceptionPage } from "./pages/ReceptionPage";
 import { StaffDirectoryPage } from "./pages/StaffDirectoryPage";
 import { LicenseAdminPage } from "./pages/LicenseAdminPage";
 import { TenantSettingsPage } from "./pages/TenantSettingsPage";
+import { EmbedNotificationsPage } from "./pages/EmbedNotificationsPage";
+import { mergeSearchWithPersistedEmbed, readPersistedEmbedQuery } from "./lib/trainifyEmbedUrl";
 
 function PrivateRoute() {
   const { token } = useAuth();
@@ -25,16 +28,40 @@ function PrivateRoute() {
   return <Outlet />;
 }
 
+function RootToCatalogRedirect() {
+  const loc = useLocation();
+  return <Navigate to={{ pathname: "/catalog", search: loc.search }} replace />;
+}
+
+function EmbedSearchPersister() {
+  const loc = useLocation();
+  const nav = useNavigate();
+  const persisted = readPersistedEmbedQuery();
+  const hasPersisted = Boolean(persisted && (persisted.get("embed") || persisted.get("trainifyEmbed")));
+
+  // Ako smo u embed flow-u, ali trenutna ruta nema embed parametre, vrati ih (replace) bez promene path-a.
+  // Ovo popravlja interne Link/Navigate koji ne prenose location.search (npr. iz korpe na prodavnicu).
+  useEffect(() => {
+    if (!hasPersisted) return;
+    const merged = mergeSearchWithPersistedEmbed(loc.search || "");
+    if (merged && merged !== (loc.search || "")) {
+      nav({ pathname: loc.pathname, search: merged }, { replace: true });
+    }
+  }, [hasPersisted, loc.pathname, loc.search, nav]);
+  return null;
+}
+
 export function App() {
   return (
     <div className="app-root-fill">
+      <EmbedSearchPersister />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/callback" element={<OidcCallback />} />
         <Route element={<PrivateRoute />}>
           <Route path="/admin/select-tenant" element={<AdminSelectTenantPage />} />
           <Route element={<Layout />}>
-          <Route path="/" element={<Navigate to="/catalog" replace />} />
+          <Route path="/" element={<RootToCatalogRedirect />} />
           <Route path="/catalog" element={<CatalogPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
@@ -50,6 +77,7 @@ export function App() {
           <Route path="/reference/product-types" element={<ProductTypesPage />} />
           <Route path="/reference/measure-units" element={<MeasureUnitsPage />} />
           <Route path="/admin/licenses" element={<LicenseAdminPage />} />
+          <Route path="/embed/notifications" element={<EmbedNotificationsPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/catalog" replace />} />

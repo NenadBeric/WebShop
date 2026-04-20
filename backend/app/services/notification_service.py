@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
@@ -119,3 +119,40 @@ async def mark_notifications_read(db: AsyncSession, user: CurrentUser, ids: list
             updated += 1
     await db.commit()
     return updated
+
+
+async def delete_notifications(db: AsyncSession, user: CurrentUser, ids: list[int]) -> int:
+    if not ids:
+        return 0
+    deleted = 0
+    for nid in ids[:200]:
+        n = await db.get(Notification, nid)
+        if not n or not await _user_may_access_notification(db, user, n):
+            continue
+        await db.delete(n)
+        deleted += 1
+    await db.commit()
+    return deleted
+
+
+async def clear_notifications(db: AsyncSession, user: CurrentUser) -> int:
+    stmt = await _list_filter_stmt(db, user)
+    rows = (await db.execute(stmt.with_only_columns(Notification.id))).all()
+    ids = [int(r[0]) for r in rows if r and r[0] is not None]
+    if not ids:
+        return 0
+    await db.execute(delete(Notification).where(Notification.id.in_(ids)))
+    await db.commit()
+    return len(ids)
+
+
+async def clear_read_notifications(db: AsyncSession, user: CurrentUser) -> int:
+    stmt = await _list_filter_stmt(db, user)
+    stmt = stmt.where(Notification.read_at.is_not(None))
+    rows = (await db.execute(stmt.with_only_columns(Notification.id))).all()
+    ids = [int(r[0]) for r in rows if r and r[0] is not None]
+    if not ids:
+        return 0
+    await db.execute(delete(Notification).where(Notification.id.in_(ids)))
+    await db.commit()
+    return len(ids)

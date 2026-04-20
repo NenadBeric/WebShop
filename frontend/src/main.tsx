@@ -12,6 +12,7 @@ import {
   applyTenantThemeFromCurrentUrl,
   installCrossAppThemeListener,
 } from "./theme/embedThemeBootstrap";
+import { consumeTrainifyEmbedAuthFromUrl } from "./lib/trainifyEmbedAuth";
 import { App } from "./App";
 import "./index.css";
 
@@ -19,7 +20,7 @@ import "./index.css";
 function bootstrapLangFromUrl(): void {
   if (typeof window === "undefined") return;
   const q = new URLSearchParams(window.location.search);
-  const raw = (q.get("lang") || q.get("locale") || "").trim().toLowerCase();
+  const raw = (q.get("lang") || q.get("locale") || q.get("trainifyLocale") || "").trim().toLowerCase();
   if (raw === "en" || raw === "sr" || raw === "ru" || raw === "zh") {
     try {
       localStorage.setItem(LANG_KEY, raw);
@@ -30,9 +31,12 @@ function bootstrapLangFromUrl(): void {
 }
 
 bootstrapLangFromUrl();
+consumeTrainifyEmbedAuthFromUrl();
 applyTenantThemeFromCurrentUrl();
 const _sp = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-const _urlApp = (_sp.get("appTheme") || _sp.get("trainify_theme") || "").trim().toLowerCase();
+const _urlApp = (_sp.get("appTheme") || _sp.get("trainify_theme") || _sp.get("trainifyTheme") || "")
+  .trim()
+  .toLowerCase();
 if (_urlApp !== "light" && _urlApp !== "dark") {
   initThemeFromStorage();
 }

@@ -41,7 +41,16 @@ Kad budu poznati **stvarni** URL-ovi deploya, dopišite ih u tabelu ispod (bez z
 
 ### 2.2. Ugrađeni izveštaji (iframe)
 
-Za prikaz bez menija (npr. u Trainify iframe-u), na bilo koji URL frontenda dodajte query **`?embed=true`** (ili `embed=1`). Korisnik mora i dalje biti autentifikovan u WebShop-u (isti JWT / sesija u iframe-u zavisi od domena i `SameSite` kolačiča — u praksi najčešće isti sajt ili token prosleđen prema dogovoru).
+Za prikaz **bez shop sidebar-a i top bar-a** (samo glavni „body“ blok), na URL dodajte jedno od sledećeg:
+
+| Način | Query (primer) |
+|--------|----------------|
+| Generički embed | **`?embed=true`** (ili `embed=1` / `yes`) |
+| Trainify | **`?trainifyEmbed=1`** i **`trainifyEmbedLayout=body`** — ako `trainifyEmbedLayout` **nedostaje**, podrazumeva se **`body`** (isto ponašanje). Za **pun** WebShop shell (sidebar + header) u istom prozoru: **`trainifyEmbedLayout=full`** (ili `shell` / `default`). |
+
+Implementacija: `isChromelessAppShellSearch()` u `frontend/src/lib/trainifyEmbedUrl.ts`, upotreba u `Layout.tsx`.
+
+Korisnik mora i dalje biti autentifikovan u WebShop-u (isti JWT / sesija u iframe-u zavisi od domena i `SameSite` kolačiča — u praksi najčešće isti sajt ili token prosleđen prema dogovoru).
 
 ### 2.3. Tema brenda tenanta, light/dark i jezik (Trainify → WebShop SPA)
 
@@ -49,9 +58,9 @@ WebShop deli isti CSS model kao Trainify (`data-gym-theme-preset`, `data-gym-cus
 
 **Redosled pri startu** (izvor istine: `frontend/src/main.tsx`):
 
-1. **`bootstrapLangFromUrl()`** — ako u URL-u postoji `lang` ili `locale` (`sr` \| `en` \| `ru` \| `zh`), vrednost se upisuje u `localStorage` pod ključem `webshop_lang` pre `I18nProvider`-a, tako da je ceo UI na tom jeziku pri prvom renderu.
-2. **`applyTenantThemeFromCurrentUrl()`** — čita query i primenjuje tenant brend + opciono `appTheme` / `trainify_theme` (light/dark na `<html>` i isti ključ `trainify_theme` u `localStorage` radi usklađenja sa Trainify-jem).
-3. Ako u URL-u **nema** `appTheme` ni `trainify_theme`, poziva se **`initThemeFromStorage()`** (preostali light/dark iz storage-a).
+1. **`bootstrapLangFromUrl()`** — ako u URL-u postoji `lang`, `locale` ili **`trainifyLocale`** (`sr` \| `en` \| `ru` \| `zh`), vrednost se upisuje u `localStorage` pod ključem `webshop_lang` pre `I18nProvider`-a, tako da je ceo UI na tom jeziku pri prvom renderu.
+2. **`applyTenantThemeFromCurrentUrl()`** — čita query i primenjuje tenant brend + opciono `appTheme` / `trainify_theme` / **`trainifyTheme`** (light/dark na `<html>` i isti ključ `trainify_theme` u `localStorage` radi usklađenja sa Trainify-jem). **`trainifyEmbed=1`** tretira se kao uključen **`tenantTheme`** flag (zajedno sa `tenantId` i brend poljima).
+3. Ako u URL-u **nema** `appTheme`, `trainify_theme` ni **`trainifyTheme`**, poziva se **`initThemeFromStorage()`** (preostali light/dark iz storage-a).
 4. **`applyCachedTenantBrandingIfAny()`** — primena poslednjeg keširanog `TenantThemeDto` ako postoji (npr. posle prethodnog ulaska).
 5. **`installCrossAppThemeListener()`** — sluša `postMessage` sa temom (vidi ispod).
 
@@ -59,13 +68,15 @@ WebShop deli isti CSS model kao Trainify (`data-gym-theme-preset`, `data-gym-cus
 
 | Parametar | Primer | Značenje |
 |-----------|--------|----------|
-| **`embed`** | `embed=true` | Kompaktan UI (izveštaji, itd.) — vidi §2.2. |
-| **`lang`** ili **`locale`** | `lang=en` | Jezik celog SPA: `sr`, `en`, `ru`, `zh` → `localStorage.webshop_lang`. |
+| **`embed`** | `embed=true` | Kompaktan UI — vidi §2.2. |
+| **`trainifyEmbed`** | `trainifyEmbed=1` | Trainify ulaz; u kombinaciji sa `trainifyEmbedLayout` kontroliše shell; takođe uključuje čitanje `TenantThemeDto` iz URL-a kao `tenantTheme=1`. |
+| **`trainifyEmbedLayout`** | `trainifyEmbedLayout=body` | Sa `trainifyEmbed=1`: samo glavni sadržaj. Ako parametar **nedostaje**, podrazumevano je **`body`**. Vrednosti **`full`**, **`shell`**, **`default`** — pun WebShop layout. |
+| **`lang`**, **`locale`**, **`trainifyLocale`** | `trainifyLocale=en` | Jezik celog SPA: `sr`, `en`, `ru`, `zh` → `localStorage.webshop_lang`. |
 | **`tenantTheme`** ili **`embedTheme`** | `tenantTheme=1` | „Uključi“ čitanje brenda iz URL-a zajedno sa `tenantId` (vidi `embedThemeBootstrap.ts`). |
 | **`tenantId`** | `tenantId=demo-gym` | Identitet tenanta za brend; obavezan ako iz URL-a gradite `TenantThemeDto`. |
-| **`appTheme`** ili **`trainify_theme`** | `appTheme=light` | Korisnički režim: `light` \| `dark` (isti smisao kao u Trainify `trainify_theme`). |
-| **`themePreset`** | `themePreset=LIGHT_A` | Gym preset na `<html>`: **`LIGHT_A`** ili **`DARK_B`** (isto kao Trainify). Vrednost `TRAINIFY` u JSON-u se tretira kao „bez preset-a“. |
-| **`primaryColorHex`** | `primaryColorHex=%233b82f6` | URL-enkodiran `#RRGGBB`. **Važno:** u kodu (`applyTenantTheme.ts`) prilagođena primarna boja se primenjuje **samo ako je postavljen i validan `themePreset` (`LIGHT_A` ili `DARK_B`)** — hex bez preset-a **ne menja** `--primary`. |
+| **`appTheme`**, **`trainify_theme`**, **`trainifyTheme`** | `trainifyTheme=dark` | Korisnički režim: `light` \| `dark` (isti smisao kao Trainify `trainify_theme`). |
+| **`themePreset`**, **`trainifyGymThemePreset`** | `trainifyGymThemePreset=LIGHT_A` | Gym preset na `<html>`: **`LIGHT_A`** ili **`DARK_B`**. Vrednost `TRAINIFY` u JSON-u se tretira kao „bez preset-a“. |
+| **`primaryColorHex`**, **`trainifyPrimary`** | `trainifyPrimary=%233b82f6` ili `3b82f6` | Primarna boja; ista pravila kao `primaryColorHex`. **Važno:** u `applyTenantTheme.ts` primena **samo uz validan `themePreset` (`LIGHT_A` ili `DARK_B`)**. |
 | **`themeFont`** | `themeFont=INTER` | Ista konvencija kao u admin modalu teme (Google font link + `--font`). |
 | **`borderRadiusPx`** | `borderRadiusPx=12` | Broj 0–16 → CSS radius tokeni. |
 | **`buttonHoverHex`** | `buttonHoverHex=%232563eb` | Opciono; inače se izračuna iz primarne. |
@@ -73,8 +84,10 @@ WebShop deli isti CSS model kao Trainify (`data-gym-theme-preset`, `data-gym-cus
 **Primer kompletnog `src` za iframe** (ilustracija; zamenite host i `tenant_id`):
 
 ```text
-https://<webshop-frontend-host>/catalog?embed=true&tenantTheme=1&tenantId=TERETANA-1&lang=sr&appTheme=light&themePreset=LIGHT_A&primaryColorHex=%233b82f6&borderRadiusPx=10&themeFont=INTER
+https://<webshop-frontend-host>/catalog?trainifyEmbed=1&trainifyEmbedLayout=body&tenantId=TERETANA-1&trainifyLocale=sr&trainifyTheme=light&trainifyGymThemePreset=LIGHT_A&trainifyPrimary=%233b82f6&borderRadiusPx=10&themeFont=INTER
 ```
+
+(Ekvivalent sa starijim imenima: `embed=true&tenantTheme=1&lang=sr&appTheme=light&themePreset=LIGHT_A&primaryColorHex=…`.)
 
 #### 2.3.2. `postMessage` iz Trainify roditelja
 

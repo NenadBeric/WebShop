@@ -18,6 +18,10 @@ DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 def _decode_payload(token: str) -> dict:
+    """Decode JWT from WebShop/OIDC first, then fall back to Trainify HS256.
+
+    This supports Trainify-embedded WebShop where the parent app passes its own JWT.
+    """
     try:
         return decode_token(
             token,
@@ -27,8 +31,21 @@ def _decode_payload(token: str) -> dict:
             legacy_algorithm=settings.JWT_ALGORITHM,
             oidc_audience=settings.OIDC_AUDIENCE,
         )
-    except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=tr("invalid_token")) from exc
+    except JWTError:
+        pass
+    ts = (settings.TRAINIFY_JWT_SECRET or "").strip()
+    if ts:
+        try:
+            alg = (settings.TRAINIFY_JWT_ALGORITHM or "HS256").strip() or "HS256"
+            return jwt.decode(token, ts, algorithms=[alg])
+        except JWTError:
+            pass
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=tr("invalid_token"))
+
+
+# Backwards-compatible alias (older code referenced this name).
+def _try_decode_webshop_or_trainify(token: str) -> dict:
+    return _decode_payload(token)
 
 
 def _payload_to_user(payload: dict) -> CurrentUser:
@@ -51,10 +68,32 @@ async def get_current_user(
     cred: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     db: DbSession,
     x_webshop_tenant_id: Annotated[str | None, Header(alias="X-Webshop-Tenant-Id")] = None,
+    x_trainify_tenant_id: Annotated[str | None, Header(alias="X-Trainify-Tenant-Id")] = None,
 ) -> CurrentUser:
     if cred is None or not cred.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=tr("invalid_token"))
-    payload = _decode_payload(cred.credentials)
+    token_str = cred.credentials
+    tenant_header = (x_webshop_tenant_id or x_trainify_tenant_id or "").strip()
+    payload = _decode_payload(token_str)
+
+    role_raw = str(payload.get("role", "")).strip()
+    if role_raw == "CLIENT" and tenant_header:
+        row = await db.get(TenantProfile, tenant_header)
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=tr("admin_tenant_unknown"))
+        uid = str(payload.get("sub", "")).strip()
+        if not uid:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=tr("invalid_token"))
+        email = str(payload.get("email", "")).strip()
+        display = email.split("@")[0] if "@" in email else email
+        return CurrentUser(
+            sub=f"trainify:{uid}",
+            tenant_id=tenant_header,
+            role="WEBSHOP_CUSTOMER",
+            email=email,
+            name=display or f"user-{uid}",
+        )
+
     user = _payload_to_user(payload)
     if user.is_admin():
         h = (x_webshop_tenant_id or "").strip()

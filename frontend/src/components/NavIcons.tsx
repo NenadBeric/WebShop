@@ -198,6 +198,18 @@ export function IconX(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+/** Kanta (Trainify Trash). */
+export function IconTrash(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...common} {...props}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M6 6l1 16a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-16" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
 export function IconSearch(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...common} {...props}>

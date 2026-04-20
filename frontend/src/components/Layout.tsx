@@ -5,6 +5,7 @@ import { useAuth, canManage, canReception, canShop } from "../auth/AuthContext";
 import { useCart } from "../cart/CartContext";
 import { useI18n } from "../i18n/I18nContext";
 import { TRAINIFY_APP_URL } from "../lib/externalLinks";
+import { isChromelessAppShellSearch, persistEmbedQueryFromSearch } from "../lib/trainifyEmbedUrl";
 import {
   MOBILE_FAB_PATHS,
   MOBILE_QUICK_MIN,
@@ -78,13 +79,10 @@ export function Layout() {
   const { t, lang, setLang } = useI18n();
   const loc = useLocation();
   const navigate = useNavigate();
-  const embedMode = useMemo(() => {
-    const q = new URLSearchParams(loc.search);
-    const e = (q.get("embed") || "").toLowerCase();
-    return e === "1" || e === "true" || e === "yes";
-  }, [loc.search]);
+  const embedMode = useMemo(() => isChromelessAppShellSearch(loc.search), [loc.search]);
   const role = user?.role || "";
-  const cartCount = lines.reduce((s, l) => s + l.quantity, 0);
+  // Badge should show number of distinct cart lines (items), not total quantity.
+  const cartCount = lines.filter((l) => l.quantity > 0).length;
 
   const [pinned, setPinned] = useState(readPinned);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -94,6 +92,11 @@ export function Layout() {
 
   const userKey = user?.sub || user?.email || "anon";
   const hadAuthToken = useRef(false);
+
+  // U embed/Trainify režimu: zapamti parametre kako SPA navigacija ne bi "pojela" embed flagove.
+  useEffect(() => {
+    persistEmbedQueryFromSearch(loc.search);
+  }, [loc.search]);
 
   useEffect(() => {
     const tid = (user?.tenant_id || "").trim();

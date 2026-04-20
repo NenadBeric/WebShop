@@ -9,6 +9,7 @@
  *   { type: "trainify-webshop-theme", theme: { tenantId, themePreset, ... }, appTheme?: "light"|"dark" }
  */
 
+import { isQueryTruthy, normalizeTrainifyPrimaryHex } from "../lib/trainifyEmbedUrl";
 import { applyThemeToDocument, type AppTheme } from "../lib/themeToggle";
 import { applyTenantThemeToDocument, type TenantThemeDto } from "./applyTenantTheme";
 import { cachedToTenantThemeDto, readCachedTenantBranding, writeCachedTenantBranding } from "./tenantBrandingCache";
@@ -29,9 +30,10 @@ function coerceInt(v: string | null): number | null {
 export function applyTenantThemeFromCurrentUrl(): void {
   if (typeof window === "undefined") return;
   const q = new URLSearchParams(window.location.search);
-  const flag = q.get("tenantTheme") === "1" || q.get("embedTheme") === "1";
-  const tenantId = (q.get("tenantId") || "").trim();
-  const appTheme = parseAppTheme(q.get("appTheme") || q.get("trainify_theme"));
+  const trainifyEmbed = isQueryTruthy(q.get("trainifyEmbed"));
+  const flag = q.get("tenantTheme") === "1" || q.get("embedTheme") === "1" || trainifyEmbed;
+  const tenantId = (q.get("tenantId") || q.get("tenant") || "").trim();
+  const appTheme = parseAppTheme(q.get("appTheme") || q.get("trainify_theme") || q.get("trainifyTheme"));
 
   if (appTheme) {
     applyThemeToDocument(appTheme);
@@ -43,8 +45,9 @@ export function applyTenantThemeFromCurrentUrl(): void {
     }
   }
 
-  const themePreset = (q.get("themePreset") || "").trim() || null;
-  const primaryColorHex = (q.get("primaryColorHex") || "").trim() || null;
+  const themePreset = (q.get("themePreset") || q.get("trainifyGymThemePreset") || "").trim() || null;
+  const primaryColorHex =
+    (q.get("primaryColorHex") || "").trim() || normalizeTrainifyPrimaryHex(q.get("trainifyPrimary")) || null;
   const themeFont = (q.get("themeFont") || "").trim() || null;
   const borderRadiusPx = coerceInt(q.get("borderRadiusPx"));
   const buttonHoverHex = (q.get("buttonHoverHex") || "").trim() || null;

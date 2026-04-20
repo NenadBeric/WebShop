@@ -2763,6 +2763,64 @@ a.notif-item:visited {
   white-space: nowrap;
 }
 
+/* Embed notifikacije (Trainify): full-page lista + akcije + kanta */
+.embed-notif-page .card {
+  padding: 0;
+}
+.embed-notif-head {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.embed-notif-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+.embed-notif-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.embed-notif-actions .btn {
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
+}
+.embed-notif-list {
+  display: flex;
+  flex-direction: column;
+}
+.embed-notif-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.embed-notif-item-main {
+  flex: 1;
+  min-width: 0;
+}
+.embed-notif-delete {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.embed-notif-delete:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg);
+  color: var(--danger);
+}
+
 .theme-toggle {
   display: inline-flex;
   align-items: center;

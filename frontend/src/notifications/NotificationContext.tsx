@@ -9,6 +9,9 @@ type NotificationCtx = {
   loading: boolean;
   refresh: () => Promise<void>;
   markRead: (ids: number[]) => Promise<void>;
+  deleteIds: (ids: number[]) => Promise<void>;
+  clearAll: () => Promise<void>;
+  clearRead: () => Promise<void>;
 };
 
 const POLL_MS = 25_000;
@@ -57,6 +60,43 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     [token, refresh],
   );
 
+  const deleteIds = useCallback(
+    async (ids: number[]) => {
+      if (!token || !ids.length) return;
+      try {
+        await apiFetch("/api/v1/notifications/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        setItems((prev) => prev.filter((n) => !ids.includes(n.id)));
+      } catch {
+        void refresh();
+      }
+    },
+    [token, refresh],
+  );
+
+  const clearAll = useCallback(async () => {
+    if (!token) return;
+    try {
+      await apiFetch("/api/v1/notifications/clear", { method: "POST" });
+      setItems([]);
+    } catch {
+      void refresh();
+    }
+  }, [token, refresh]);
+
+  const clearRead = useCallback(async () => {
+    if (!token) return;
+    try {
+      await apiFetch("/api/v1/notifications/clear-read", { method: "POST" });
+      setItems((prev) => prev.filter((n) => !n.read_at));
+    } catch {
+      void refresh();
+    }
+  }, [token, refresh]);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -84,8 +124,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const unreadCount = useMemo(() => items.filter((n) => !n.read_at).length, [items]);
 
   const value = useMemo(
-    () => ({ items, unreadCount, loading, refresh, markRead }),
-    [items, unreadCount, loading, refresh, markRead],
+    () => ({ items, unreadCount, loading, refresh, markRead, deleteIds, clearAll, clearRead }),
+    [items, unreadCount, loading, refresh, markRead, deleteIds, clearAll, clearRead],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

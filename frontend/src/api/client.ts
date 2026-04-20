@@ -1,5 +1,6 @@
 import { getSavedLanguage, setSavedLanguage } from "../i18n/setup";
 import { getAdminTenantId } from "../lib/adminTenant";
+import { getEmbedTenantId, getEmbedToken } from "../lib/trainifyEmbedAuth";
 
 export { getSavedLanguage, setSavedLanguage };
 
@@ -27,6 +28,7 @@ export function parseJwtPayload<T extends Record<string, unknown>>(token: string
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const allowOneRetry = (init as { __embedRetry?: boolean }).__embedRetry !== true;
   const headers = new Headers(init.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -36,6 +38,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     if (p?.role === "ADMIN") {
       const tid = getAdminTenantId();
       if (tid) headers.set("X-Webshop-Tenant-Id", tid);
+    } else {
+      const embedTid = getEmbedTenantId();
+      if (embedTid) headers.set("X-Webshop-Tenant-Id", embedTid);
     }
   }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
@@ -49,6 +54,14 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
         : Array.isArray(data?.detail)
           ? data.detail.map((d: { msg?: string }) => d.msg).join(", ")
           : res.statusText;
+    // Trainify embed: if token got overwritten/cleared during navigation/login, restore the original embed token once.
+    if (res.status === 401 && allowOneRetry && typeof msg === "string" && msg.toLowerCase().includes("nevažeći token")) {
+      const embedTok = (getEmbedToken() || "").trim();
+      if (embedTok) {
+        setToken(embedTok);
+        return apiFetch<T>(path, { ...init, __embedRetry: true } as RequestInit);
+      }
+    }
     throw new Error(msg || "Request failed");
   }
   return data as T;

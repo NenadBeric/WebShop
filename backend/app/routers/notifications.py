@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.dependencies import AuthUser
-from app.schemas.notifications import NotificationOut, NotificationReadBody
+from app.schemas.notifications import NotificationDeleteBody, NotificationOut, NotificationReadBody
 from app.services import notification_service
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -29,3 +29,31 @@ async def mark_read(
 ):
     n = await notification_service.mark_notifications_read(db, user, body.ids)
     return {"marked": n}
+
+
+@router.post("/delete", response_model=dict)
+async def delete_many(
+    body: NotificationDeleteBody,
+    db: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUser,
+):
+    n = await notification_service.delete_notifications(db, user, body.ids)
+    return {"deleted": n}
+
+
+@router.post("/clear", response_model=dict)
+async def clear_all(
+    db: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUser,
+):
+    n = await notification_service.clear_notifications(db, user)
+    return {"deleted": n}
+
+
+@router.post("/clear-read", response_model=dict)
+async def clear_read(
+    db: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUser,
+):
+    n = await notification_service.clear_read_notifications(db, user)
+    return {"deleted": n}
